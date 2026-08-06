@@ -54,11 +54,20 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15 } = {}) {
 
   const queue = buildNoisyQueue(ranks, noise)
 
+  // generateCandidate* can legitimately produce more items than there are
+  // tiles — item count is a soft constraint, and sometimes the minimum
+  // possible item count for an exact sum (its binary population count)
+  // exceeds the tile budget. Positions beyond the tile count have nowhere to
+  // go, so only what's actually assigned below counts as "placed" — stats
+  // are computed from that, not the raw pre-truncation generated list, or
+  // they'd falsely report success on value that never made it onto the board.
   const semiPlacements = []
   const blockedRanks = []
+  const placedRanks = []
   orderedPositions.forEach((pos, i) => {
     const rank = queue[i]
     if (rank == null) return
+    placedRanks.push(rank)
     if (tiles[pos.row][pos.col] === 'semi') {
       semiPlacements.push({ row: pos.row, col: pos.col, rank })
     } else {
@@ -75,15 +84,15 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15 } = {}) {
   // Board 0 only guarantees small ranks (1-3) plus maxRank, not minRank, so
   // its variety check is max-only; other boards check both ends of the window.
   const isRange = minRank < maxRank
-  const hasMax = ranks.includes(maxRank)
-  const hasRangeVariety = !isRange ? null : isFirstBoard ? hasMax : hasMax && ranks.includes(minRank)
+  const hasMax = placedRanks.includes(maxRank)
+  const hasRangeVariety = !isRange ? null : isFirstBoard ? hasMax : hasMax && placedRanks.includes(minRank)
 
   return {
     semiPlacements,
     blockedQueue,
-    itemCount: ranks.length,
+    itemCount: placedRanks.length,
     tileCount: positions.length,
-    sum: ranks.reduce((s, r) => s + valueOf(r), 0),
+    sum: placedRanks.reduce((s, r) => s + valueOf(r), 0),
     hasRangeVariety,
   }
 }
