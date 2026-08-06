@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Wand2, BookmarkPlus, CheckCircle2, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react'
 import BoardGrid from './BoardGrid'
 import SimulationReport from './SimulationReport'
+import GoalSolver from './GoalSolver'
 import Card from './ui/Card'
 import Button from './ui/Button'
 import NumberField from './ui/NumberField'
@@ -164,8 +165,12 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
               label="Blocked value (DR)"
               className="col-span-2"
               min={0}
+              max={valueOf(MAX_RANK)}
+              hint={`Can't exceed ${valueOf(MAX_RANK)} — the full chain's total value`}
               value={board.blockedValue}
-              onChange={(e) => updateBoard({ blockedValue: Number(e.target.value) || 0 })}
+              onChange={(e) =>
+                updateBoard({ blockedValue: Math.min(Number(e.target.value) || 0, valueOf(MAX_RANK)) })
+              }
             />
             <NumberField
               label="Min rank"
@@ -237,6 +242,8 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
             )}
           </div>
         </Card>
+
+        {isFirstBoard && <GoalSolver board={board} onChange={onChange} />}
 
         <SimulationReport board={board} />
 
