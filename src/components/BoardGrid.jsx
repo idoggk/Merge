@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { colorForRank, valueOf } from '../lib/ranks'
+import { gridWidthRem } from '../lib/board'
 
 const STATE_STYLE = {
   open: 'bg-violet-50 border-2 border-dashed border-violet-200',
@@ -52,8 +53,15 @@ export default function BoardGrid({ tiles, placements, onPaint, onFillAll }) {
     if (tiles[r][c] !== brush) onPaint(r, c, brush)
   }
 
+  const cols = tiles[0]?.length ?? 0
+  // Toolbar/legend text is long enough to not wrap on its own on a wide
+  // screen — without a cap, the card stretches to match that text instead of
+  // the actual tile grid. Cap it to the grid's own width so those rows wrap
+  // instead.
+  const widthRem = gridWidthRem(cols)
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" style={{ maxWidth: `${widthRem}rem` }}>
       {onPaint && (
         <div className="flex items-center gap-3 flex-wrap justify-between">
           <div className="flex items-center gap-2 flex-wrap">

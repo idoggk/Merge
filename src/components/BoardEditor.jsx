@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Wand2, BookmarkPlus, CheckCircle2, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react'
+import { Wand2, BookmarkPlus, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
 import BoardGrid from './BoardGrid'
 import SimulationReport from './SimulationReport'
 import GoalSolver from './GoalSolver'
@@ -7,7 +7,7 @@ import Card from './ui/Card'
 import Button from './ui/Button'
 import NumberField from './ui/NumberField'
 import Slider from './ui/Slider'
-import { resizeTiles } from '../lib/board'
+import { resizeTiles, gridWidthRem } from '../lib/board'
 import { placeItems } from '../lib/placement'
 import { MIN_RANK, MAX_RANK, colorForRank, valueOf } from '../lib/ranks'
 import { applyPresetToBoard, createPreset } from '../lib/presets'
@@ -103,44 +103,46 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
           {board.blockedQueue.length === 0 ? (
             <p className="text-sm text-slate-400">Generate items to populate the queue.</p>
           ) : (
-            <ol className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap gap-2" style={{ maxWidth: `${gridWidthRem(board.cols)}rem` }}>
               {board.blockedQueue.map((rank, i) => (
-                <li key={i} className="flex items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5">
-                  <span className="text-xs text-slate-400 w-5 text-right">{i + 1}</span>
+                <div key={i} className="flex flex-col items-center gap-1 border border-slate-200 rounded-lg p-1.5 w-16">
                   <span
-                    className="w-7 h-7 rounded-md flex items-center justify-center text-white text-xs font-bold shrink-0"
+                    className="w-9 h-9 rounded-md flex flex-col items-center justify-center text-white text-xs font-bold leading-none"
                     style={{ backgroundColor: colorForRank(rank) }}
                   >
                     {rank}
+                    <span className="text-[8px] font-semibold opacity-85">{valueOf(rank)}</span>
                   </span>
-                  <span className="text-xs text-slate-500 flex-1">{valueOf(rank)} DR</span>
-                  <button
-                    type="button"
-                    title="Move earlier"
-                    disabled={i === 0}
-                    onClick={() => moveQueueItem(i, i - 1)}
-                    className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-30"
-                  >
-                    <ChevronUp size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    title="Move later"
-                    disabled={i === board.blockedQueue.length - 1}
-                    onClick={() => moveQueueItem(i, i + 1)}
-                    className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-30"
-                  >
-                    <ChevronDown size={14} />
-                  </button>
-                </li>
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      title="Move earlier"
+                      disabled={i === 0}
+                      onClick={() => moveQueueItem(i, i - 1)}
+                      className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-20"
+                    >
+                      <ChevronLeft size={12} />
+                    </button>
+                    <span className="text-[10px] text-slate-400">{i + 1}</span>
+                    <button
+                      type="button"
+                      title="Move later"
+                      disabled={i === board.blockedQueue.length - 1}
+                      onClick={() => moveQueueItem(i, i + 1)}
+                      className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-20"
+                    >
+                      <ChevronRight size={12} />
+                    </button>
+                  </div>
+                </div>
               ))}
-            </ol>
+            </div>
           )}
         </Card>
       </div>
 
-      <div className="flex flex-col gap-6 flex-1 min-w-72">
-        <Card title="Board size">
+      <div className="flex flex-wrap gap-6 flex-1 min-w-72">
+        <Card title="Board size" className="flex-1 min-w-64">
           <div className="grid grid-cols-2 gap-4">
             <NumberField
               label="Rows"
@@ -159,7 +161,11 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
           </div>
         </Card>
 
-        <Card title="Subsidy & rank window" subtitle="Blocked-tile value and the allowed item rank range">
+        <Card
+          title="Subsidy & rank window"
+          subtitle="Blocked-tile value and the allowed item rank range"
+          className="flex-1 min-w-64"
+        >
           <div className="grid grid-cols-2 gap-4">
             <NumberField
               label="Blocked value (DR)"
@@ -189,7 +195,11 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
           </div>
         </Card>
 
-        <Card title="Placement" subtitle="Generate items and place them by distance-to-player">
+        <Card
+          title="Placement"
+          subtitle="Generate items and place them by distance-to-player"
+          className="flex-1 min-w-64"
+        >
           <div className="flex flex-col gap-4">
             <Slider
               label="Noise"
@@ -247,7 +257,11 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
 
         <SimulationReport board={board} />
 
-        <Card title="Suggestions" subtitle="Save a layout you like, apply it elsewhere">
+        <Card
+          title="Suggestions"
+          subtitle="Save a layout you like, apply it elsewhere"
+          className="flex-1 min-w-64"
+        >
           <div className="flex flex-col gap-3">
             {presets.length === 0 ? (
               <p className="text-sm text-slate-400">No saved suggestions yet — design a layout, then save it below.</p>

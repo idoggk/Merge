@@ -34,6 +34,16 @@ export function createBoard(name, { rows = 5, cols = 8 } = {}) {
   }
 }
 
+// The board grid's own rendered width (tile size + gaps + card padding), in
+// rem. Any sibling content meant to visually align under/beside the grid
+// (e.g. the blocked-item queue) should cap itself to this same width —
+// otherwise, with enough content to need it, that sibling grows wider than
+// the grid and destabilizes the whole page layout (its column becomes the
+// widest thing in its row, which can force later columns to wrap).
+export function gridWidthRem(cols) {
+  return cols * 4.25 + Math.max(cols - 1, 0) * 0.5 + 2
+}
+
 export function cloneBoard(board, name) {
   return {
     ...board,

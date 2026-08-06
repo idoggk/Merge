@@ -30,6 +30,7 @@ export default function GoalSolver({ board, onChange }) {
     <Card
       title="Onboarding goal"
       subtitle="Board 1 only — find the subsidy that gets a player from a DR grant to a target rank"
+      className="flex-1 min-w-64"
     >
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-4">

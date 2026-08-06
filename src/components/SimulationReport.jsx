@@ -38,6 +38,7 @@ export default function SimulationReport({ board }) {
     <Card
       title="Playthrough simulation"
       subtitle="Simulated DR spent to first reach each rank, merging this board's items"
+      className="flex-1 min-w-64"
     >
       <div className="flex flex-col gap-4">
         <div className="flex items-end gap-3">

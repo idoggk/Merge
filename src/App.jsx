@@ -76,7 +76,7 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200">
-        <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-[1760px] mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="bg-purple-600 text-white rounded-lg p-1.5">
               <Puzzle size={18} />
@@ -95,7 +95,7 @@ function App() {
         </div>
       </header>
 
-      <main className="max-w-[1600px] mx-auto px-6 py-6 flex gap-8">
+      <main className="max-w-[1760px] mx-auto px-6 py-6 flex gap-8">
         <BoardList
           boards={boards}
           activeId={activeBoard?.id}
