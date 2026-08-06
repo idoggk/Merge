@@ -142,7 +142,7 @@ function findLegalMerge(state) {
   return findDirectAdjacentMerge(state) ?? findReachableMerge(state)
 }
 
-function revealNeighbors(state, [r, c], recordRank) {
+function revealNeighbors(state, [r, c], recordRank, log) {
   for (const [dr, dc] of DELTAS) {
     const nr = r + dr
     const nc = c + dc
@@ -151,11 +151,12 @@ function revealNeighbors(state, [r, c], recordRank) {
     const revealedRank = state.blockedQueue[state.blockedQueueIndex++]
     state.itemAt[nr][nc] = revealedRank
     state.locked[nr][nc] = false
+    log?.({ type: 'reveal', cell: [nr, nc], rank: revealedRank, queuePosition: state.blockedQueueIndex })
     recordRank(revealedRank)
   }
 }
 
-function performMerge(state, merge, recordRank) {
+function performMerge(state, merge, recordRank, log) {
   const [mr, mc] = merge.mover
   const [rr, rc] = merge.receiver
   const newRank = merge.rank + 1
@@ -164,11 +165,12 @@ function performMerge(state, merge, recordRank) {
   state.itemAt[mr][mc] = null
   if (state.stuck[rr][rc]) state.stuck[rr][rc] = false // semi tile fully cleared
 
+  log?.({ type: 'merge', from: [mr, mc], into: [rr, rc], rank: merge.rank, newRank })
   recordRank(newRank)
   // A merge "occurs" at both cells it touches — either can reveal a
   // neighboring locked tile.
-  revealNeighbors(state, merge.mover, recordRank)
-  revealNeighbors(state, merge.receiver, recordRank)
+  revealNeighbors(state, merge.mover, recordRank, log)
+  revealNeighbors(state, merge.receiver, recordRank, log)
 }
 
 function findEmptyUnlockedCell(state) {
@@ -221,22 +223,35 @@ function currentMaxRank(state) {
 // never reached in this run are absent. `stopReason` explains why the run
 // ended: 'max-rank-reached', 'no-legal-move', 'budget-exhausted', or
 // 'max-steps' (a safety valve, not expected to trigger in practice).
+//
+// options.trace: true also returns `events`, a step-by-step log (initial
+// board state, each spend/merge/reveal, each first-time-reached rank, and
+// the final stop) — off by default so normal runs don't pay for it.
 export function simulatePlaythrough(board, options = {}) {
-  const { drBudget = Infinity, targetEv = DEFAULT_TARGET_EV, maxSteps = 20000 } = options
+  const { drBudget = Infinity, targetEv = DEFAULT_TARGET_EV, maxSteps = 20000, trace = false } = options
 
   const state = buildInitialState(board)
   const probs = computeProbs(targetEv)
   const nextBonus = createEvScheduler(probs)
 
+  const events = trace ? [] : null
+  const log = trace ? (e) => events.push({ drSpent, ...e }) : null
+
   let drSpent = 0
   const reachedAt = {}
   const recordRank = (rank) => {
-    if (reachedAt[rank] === undefined) reachedAt[rank] = drSpent
+    if (reachedAt[rank] === undefined) {
+      reachedAt[rank] = drSpent
+      log?.({ type: 'reached', rank })
+    }
   }
 
   for (let r = 0; r < state.rows; r++) {
     for (let c = 0; c < state.cols; c++) {
-      if (state.itemAt[r][c] != null) recordRank(state.itemAt[r][c])
+      if (state.itemAt[r][c] != null) {
+        log?.({ type: 'initial', cell: [r, c], rank: state.itemAt[r][c] })
+        recordRank(state.itemAt[r][c])
+      }
     }
   }
 
@@ -249,7 +264,7 @@ export function simulatePlaythrough(board, options = {}) {
 
     const merge = findLegalMerge(state)
     if (merge) {
-      performMerge(state, merge, recordRank)
+      performMerge(state, merge, recordRank, log)
       continue
     }
 
@@ -268,8 +283,10 @@ export function simulatePlaythrough(board, options = {}) {
     const spawnedRank = tier.normalRank + nextBonus()
     const spawnCell = findSpawnCell(state, spawnedRank)
     state.itemAt[spawnCell[0]][spawnCell[1]] = spawnedRank
+    log?.({ type: 'spend', tier: tier.cost, cell: spawnCell, rank: spawnedRank })
     recordRank(spawnedRank)
   }
 
-  return { reachedAt, drSpent, stopReason }
+  log?.({ type: 'stop', reason: stopReason })
+  return trace ? { reachedAt, drSpent, stopReason, events } : { reachedAt, drSpent, stopReason }
 }
