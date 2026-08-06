@@ -6,17 +6,16 @@ import { simulatePlaythrough } from './mergeSimulation'
 const CEILING = valueOf(MAX_RANK)
 const MAX_ITERATIONS = 40
 
-// The reserve only ever feeds the blocked queue — semi tiles are grid-fixed
-// and never draw from it — so its item count is capped by blocked tiles
-// specifically, not blocked+semi combined.
-function countBlockedTiles(tiles) {
-  let count = 0
+function countTiles(tiles) {
+  let blocked = 0
+  let semi = 0
   for (const row of tiles) {
     for (const state of row) {
-      if (state === 'blocked') count++
+      if (state === 'blocked') blocked++
+      else if (state === 'semi') semi++
     }
   }
-  return count
+  return { blocked, semi }
 }
 
 function decomposeReserved(value, minRank, maxRank, targetRank, maxItems) {
@@ -38,37 +37,78 @@ function decomposeReserved(value, minRank, maxRank, targetRank, maxItems) {
   // never claims more slots than the board has to hold it.
   splitToCount(items, Math.min(value, maxItems))
   mergeUndersized(items, minRank)
+  return items
+}
+
+// Existing semi tiles are visible and mergeable from turn zero, unlike
+// blocked tiles which need a merge nearby to reveal anything at all — so the
+// player's very first move can otherwise be "spend DR just to bootstrap a
+// reveal" before any real progress happens. Hosting the smallest reserve
+// items (rank-1s) there instead means the very first generator spend (which
+// also defaults to rank-1) has something to merge into immediately. Doesn't
+// add tiles — only ever uses however many semi tiles are already painted,
+// falling back to the blocked queue for whatever doesn't fit.
+function splitReserveByHost(items, semiTileCount) {
+  const ascending = [...items].sort((a, b) => a - b)
+  const semiItems = ascending.slice(0, Math.min(semiTileCount, ascending.length))
   // Descending — biggest items revealed earliest gets to the target rank in
   // the fewest DR, since a blocked-queue item's reveal timing depends on
   // board/merge activity, not on how much DR has been spent.
-  return items.sort((a, b) => b - a)
+  const blockedItems = ascending.slice(semiItems.length).sort((a, b) => b - a)
+  return { semiItems, blockedItems }
 }
 
-// A blocked-queue item's reveal timing depends on merge activity near it,
-// not directly on DR spent, so this checks the reserve in isolation from any
-// semi-tile bonus: semi tiles are treated as plain open cells (available to
-// the generator, but starting empty) rather than pre-seeded — so whatever
-// reserve passes here is a guarantee that holds even before the remainder
-// pool (generated afterward, using whatever blockedValue is left over) adds
-// anything on top.
-function buildIsolatedTestBoard(board, reservedItems) {
-  const tiles = board.tiles.map((row) => row.map((s) => (s === 'semi' ? 'open' : s)))
-  return { rows: board.rows, cols: board.cols, tiles, semiPlacements: [], blockedQueue: reservedItems }
+// Checks the reserve in isolation from the rest of the board: the semi
+// slots it doesn't use are treated as plain open cells (available to the
+// generator, but starting empty) rather than pre-seeded by the remainder
+// pool generated afterward — so whatever passes here is a guarantee that
+// holds even before that remainder adds anything on top.
+function buildIsolatedTestBoard(board, semiItems, blockedItems) {
+  const tiles = board.tiles.map((row) => [...row])
+  const semiPlacements = []
+  let i = 0
+  for (let r = 0; r < tiles.length && i < semiItems.length; r++) {
+    for (let c = 0; c < tiles[r].length && i < semiItems.length; c++) {
+      if (tiles[r][c] === 'semi') {
+        semiPlacements.push({ row: r, col: c, rank: semiItems[i] })
+        i += 1
+      }
+    }
+  }
+  for (let r = 0; r < tiles.length; r++) {
+    for (let c = 0; c < tiles[r].length; c++) {
+      if (tiles[r][c] === 'semi' && !semiPlacements.some((p) => p.row === r && p.col === c)) {
+        tiles[r][c] = 'open'
+      }
+    }
+  }
+  return { rows: board.rows, cols: board.cols, tiles, semiPlacements, blockedQueue: blockedItems }
 }
 
-// Board-1-only: finds the smallest blocked-queue reservation (front-loaded,
-// exact-sum, respecting the board's rank window) such that a player with
-// `drBudget` DR reaches `targetRank` using only this reserve plus the
-// generator — before the rest of the board's blockedValue is even
-// considered. Returns null if infeasible within the chain's total value.
+// Board-1-only: finds the smallest reservation (front-loaded, exact-sum,
+// respecting the board's rank window) such that a player with `drBudget` DR
+// reaches `targetRank` using only this reserve plus the generator — before
+// the rest of the board's blockedValue is even considered. Returns null if
+// infeasible within the chain's total value.
 export function computeOnboardingReserve(board, { drBudget, targetRank }) {
   const { minRank, maxRank } = board
-  const maxItems = countBlockedTiles(board.tiles)
+  const { blocked: blockedTileCount, semi: semiTileCount } = countTiles(board.tiles)
+  // The reserve is meant to be a small early checkpoint, not a claim on most
+  // of the board — it's typically a tiny fraction of blockedValue (a handful
+  // of DR against a board designed for hundreds). Splitting it into as many
+  // items as its own value would allow (up to every tile on the board) can
+  // leave too few slots for the remainder to represent its own — usually far
+  // larger — share, which can silently drop a big chunk of it (item count
+  // beyond the tile budget is a soft constraint, and its minimum possible
+  // count can exceed a handful of leftover slots). Capping at half the
+  // board's tiles keeps the reserve's footprint proportionate.
+  const maxItems = Math.max(1, Math.floor((blockedTileCount + semiTileCount) / 2))
 
   function attempt(value) {
     const items = decomposeReserved(value, minRank, maxRank, targetRank, maxItems)
-    const result = simulatePlaythrough(buildIsolatedTestBoard(board, items), { drBudget })
-    return { ok: result.reachedAt[targetRank] !== undefined, items, result }
+    const { semiItems, blockedItems } = splitReserveByHost(items, semiTileCount)
+    const result = simulatePlaythrough(buildIsolatedTestBoard(board, semiItems, blockedItems), { drBudget })
+    return { ok: result.reachedAt[targetRank] !== undefined, semiItems, blockedItems, result }
   }
 
   let high = valueOf(targetRank)
@@ -96,5 +136,10 @@ export function computeOnboardingReserve(board, { drBudget, targetRank }) {
     }
   }
 
-  return { reservedValue: hi, reservedItems: best.items, drSpentToTarget: best.result.reachedAt[targetRank] }
+  return {
+    reservedValue: hi,
+    semiItems: best.semiItems,
+    blockedItems: best.blockedItems,
+    drSpentToTarget: best.result.reachedAt[targetRank],
+  }
 }

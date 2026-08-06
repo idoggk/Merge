@@ -9,6 +9,8 @@ const INFEASIBLE_MESSAGE = {
   'insufficient-tiles': (status) =>
     `This board doesn't have enough blocked/semi tiles to hold the items this goal needs (${status.itemsNeeded} items). Add more blocked/semi tiles, or lower the target rank.`,
   unreachable: () => "This goal isn't reachable at all on this board's tile layout — try a lower target rank or a bigger DR grant.",
+  'tile-budget-too-tight': () =>
+    "This board's blocked/semi tiles are too few to host this goal's reserve without losing some of the board's value elsewhere. Add more blocked/semi tiles, or lower the target rank.",
 }
 
 export default function GoalSolver({ board, onChange }) {
