@@ -11,7 +11,14 @@ function initialState() {
   if (persisted?.boards?.length) {
     return {
       ...persisted,
-      boards: persisted.boards.map((b) => ({ semiPlacements: [], blockedQueue: [], ...b })),
+      boards: persisted.boards.map((b) => ({
+        semiPlacements: [],
+        blockedQueue: [],
+        onboardingDrBudget: null,
+        onboardingTargetRank: null,
+        onboardingStatus: null,
+        ...b,
+      })),
     }
   }
   const first = createBoard('Board 1')

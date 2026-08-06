@@ -2,6 +2,7 @@ import { computeDistances } from './boardDistance'
 import { buildNoisyQueue } from './buildNoisyQueue'
 import { generateCandidateInRange } from './generateCandidateInRange'
 import { generateCandidateWithSmallRanks } from './generateCandidateWithSmallRanks'
+import { computeOnboardingReserve } from './onboardingGoal'
 import { valueOf } from './ranks'
 
 function fillableTiles(tiles) {
@@ -42,14 +43,41 @@ function orderByDistance(positions, distances) {
 //   afterward) — this ordering doubles as the queue's default sequence.
 //
 // isFirstBoard scopes the small-rank guarantee to board index 0 only.
-export function placeItems(board, { isFirstBoard = false, noise = 0.15 } = {}) {
+//
+// onboarding (board 0 only): { drBudget, targetRank } carves a reserved
+// prefix off blockedValue up front — sized to guarantee that budget reaches
+// that rank on its own — and prepends it to the blocked queue. The REST of
+// blockedValue is generated exactly as before and fills in behind it. This
+// works alongside the board's own subsidy rather than replacing it: the
+// goal is just an early checkpoint, not a redesign of the whole board.
+export function placeItems(board, { isFirstBoard = false, noise = 0.15, onboarding = null } = {}) {
   const { tiles, blockedValue, minRank, maxRank } = board
   const positions = fillableTiles(tiles)
   const distances = computeDistances(tiles)
   const orderedPositions = orderByDistance(positions, distances)
 
+  let reservedItems = []
+  let onboardingStatus = null
+
+  if (isFirstBoard && onboarding?.drBudget != null && onboarding?.targetRank != null) {
+    const reserve = computeOnboardingReserve(board, onboarding)
+    if (!reserve) {
+      onboardingStatus = { feasible: false, reason: 'unreachable' }
+    } else if (reserve.reservedValue > blockedValue) {
+      onboardingStatus = { feasible: false, reason: 'insufficient-subsidy', reservedValueNeeded: reserve.reservedValue }
+    } else if (reserve.reservedItems.length > positions.length) {
+      onboardingStatus = { feasible: false, reason: 'insufficient-tiles', itemsNeeded: reserve.reservedItems.length }
+    } else {
+      reservedItems = reserve.reservedItems
+      onboardingStatus = { feasible: true, reservedValue: reserve.reservedValue, drSpentToTarget: reserve.drSpentToTarget }
+    }
+  }
+
+  const remainderTarget = blockedValue - reservedItems.reduce((s, r) => s + valueOf(r), 0)
+  const remainderDesired = Math.max(0, positions.length - reservedItems.length)
+
   const ranks = isFirstBoard
-    ? generateCandidateWithSmallRanks(blockedValue, positions.length, minRank, maxRank)
+    ? generateCandidateWithSmallRanks(remainderTarget, remainderDesired, minRank, maxRank)
     : generateCandidateInRange(blockedValue, positions.length, minRank, maxRank)
 
   const queue = buildNoisyQueue(ranks, noise)
@@ -63,7 +91,7 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15 } = {}) {
   // they'd falsely report success on value that never made it onto the board.
   const semiPlacements = []
   const blockedRanks = []
-  const placedRanks = []
+  const placedRanks = [...reservedItems]
   orderedPositions.forEach((pos, i) => {
     const rank = queue[i]
     if (rank == null) return
@@ -78,8 +106,11 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15 } = {}) {
   // The blocked queue has no grid position of its own, so its presentation
   // order shouldn't just inherit whatever it happened to interleave with in
   // the distance ordering above — re-noise it on its own so it reads as
-  // ascending-with-visible-local-variation rather than a flat ramp.
-  const blockedQueue = buildNoisyQueue([...blockedRanks].sort((a, b) => a - b), noise)
+  // ascending-with-visible-local-variation rather than a flat ramp. The
+  // onboarding reserve, if any, stays fixed at the front — it exists
+  // specifically to guarantee reveal order, so it must not get reshuffled in.
+  const blockedQueueRemainder = buildNoisyQueue([...blockedRanks].sort((a, b) => a - b), noise)
+  const blockedQueue = [...reservedItems, ...blockedQueueRemainder]
 
   // Board 0 only guarantees small ranks (1-3) plus maxRank, not minRank, so
   // its variety check is max-only; other boards check both ends of the window.
@@ -94,5 +125,6 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15 } = {}) {
     tileCount: positions.length,
     sum: placedRanks.reduce((s, r) => s + valueOf(r), 0),
     hasRangeVariety,
+    onboardingStatus,
   }
 }

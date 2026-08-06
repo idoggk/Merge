@@ -31,6 +31,12 @@ export function createBoard(name, { rows = 5, cols = 8 } = {}) {
     // decided at simulation time, only the reveal order is controlled here.
     semiPlacements: [],
     blockedQueue: [],
+    // Board-1-only onboarding checkpoint: "a player with this much DR should
+    // reach this rank." Feeds generation (a reserved, front-loaded slice of
+    // blockedValue) rather than overriding it — null means no goal is set.
+    onboardingDrBudget: null,
+    onboardingTargetRank: null,
+    onboardingStatus: null,
   }
 }
 

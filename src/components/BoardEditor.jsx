@@ -43,7 +43,7 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
   // Plain edits (dimensions, tile paint, subsidy, rank window) invalidate any
   // already-generated layout — it no longer matches the new configuration.
   function updateBoard(patch) {
-    onChange({ ...board, ...patch, semiPlacements: [], blockedQueue: [] })
+    onChange({ ...board, ...patch, semiPlacements: [], blockedQueue: [], onboardingStatus: null })
   }
 
   function handleDimensionChange(rows, cols) {
@@ -62,8 +62,17 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
   }
 
   function handleGenerate() {
-    const generated = placeItems(board, { isFirstBoard, noise })
-    onChange({ ...board, semiPlacements: generated.semiPlacements, blockedQueue: generated.blockedQueue })
+    const onboarding =
+      isFirstBoard && board.onboardingDrBudget != null && board.onboardingTargetRank != null
+        ? { drBudget: board.onboardingDrBudget, targetRank: board.onboardingTargetRank }
+        : null
+    const generated = placeItems(board, { isFirstBoard, noise, onboarding })
+    onChange({
+      ...board,
+      semiPlacements: generated.semiPlacements,
+      blockedQueue: generated.blockedQueue,
+      onboardingStatus: generated.onboardingStatus,
+    })
   }
 
   function moveQueueItem(from, to) {
@@ -71,7 +80,10 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
     const next = [...board.blockedQueue]
     const [moved] = next.splice(from, 1)
     next.splice(to, 0, moved)
-    onChange({ ...board, blockedQueue: next })
+    // The onboarding guarantee (if any) was validated against a specific
+    // front-loaded order — a manual reorder may no longer honor it, so don't
+    // keep claiming it does.
+    onChange({ ...board, blockedQueue: next, onboardingStatus: null })
   }
 
   function handleApplyPreset(preset) {
