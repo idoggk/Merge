@@ -3,6 +3,7 @@ import { buildNoisyQueue } from './buildNoisyQueue'
 import { generateCandidateInRange } from './generateCandidateInRange'
 import { generateCandidateWithSmallRanks } from './generateCandidateWithSmallRanks'
 import { computeOnboardingReserve } from './onboardingGoal'
+import { simulatePlaythrough } from './mergeSimulation'
 import { valueOf } from './ranks'
 
 function fillableTiles(tiles) {
@@ -15,6 +16,23 @@ function fillableTiles(tiles) {
     }
   }
   return positions
+}
+
+// The onboarding reserve only ever feeds the blocked queue (semi tiles are
+// grid-fixed and never draw from it), so it claims `reservedCount` of the
+// blocked-type slots before the remainder's own assignment runs — otherwise
+// the remainder doesn't know those slots are already spoken for, and its own
+// blocked-destined items on top of the reserve's could add up to more items
+// than there are physical blocked tiles to ever reveal them onto.
+function excludeReservedBlockedSlots(orderedPositions, tiles, reservedCount) {
+  let toExclude = reservedCount
+  return orderedPositions.filter((pos) => {
+    if (toExclude > 0 && tiles[pos.row][pos.col] === 'blocked') {
+      toExclude -= 1
+      return false
+    }
+    return true
+  })
 }
 
 // Distance-to-player queue, closest tile first. Ties break row-major so
@@ -55,6 +73,7 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15, onboardi
   const positions = fillableTiles(tiles)
   const distances = computeDistances(tiles)
   const orderedPositions = orderByDistance(positions, distances)
+  const blockedTileCount = positions.filter((pos) => tiles[pos.row][pos.col] === 'blocked').length
 
   let reservedItems = []
   let onboardingStatus = null
@@ -65,7 +84,7 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15, onboardi
       onboardingStatus = { feasible: false, reason: 'unreachable' }
     } else if (reserve.reservedValue > blockedValue) {
       onboardingStatus = { feasible: false, reason: 'insufficient-subsidy', reservedValueNeeded: reserve.reservedValue }
-    } else if (reserve.reservedItems.length > positions.length) {
+    } else if (reserve.reservedItems.length > blockedTileCount) {
       onboardingStatus = { feasible: false, reason: 'insufficient-tiles', itemsNeeded: reserve.reservedItems.length }
     } else {
       reservedItems = reserve.reservedItems
@@ -73,12 +92,16 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15, onboardi
     }
   }
 
+  // The reserve claims its slice of the blocked tiles up front — the
+  // remainder's own assignment only ever sees what's left.
+  const remainderPositions = excludeReservedBlockedSlots(orderedPositions, tiles, reservedItems.length)
+
   const remainderTarget = blockedValue - reservedItems.reduce((s, r) => s + valueOf(r), 0)
-  const remainderDesired = Math.max(0, positions.length - reservedItems.length)
+  const remainderDesired = isFirstBoard ? remainderPositions.length : positions.length
 
   const ranks = isFirstBoard
     ? generateCandidateWithSmallRanks(remainderTarget, remainderDesired, minRank, maxRank)
-    : generateCandidateInRange(blockedValue, positions.length, minRank, maxRank)
+    : generateCandidateInRange(blockedValue, remainderDesired, minRank, maxRank)
 
   const queue = buildNoisyQueue(ranks, noise)
 
@@ -92,7 +115,7 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15, onboardi
   const semiPlacements = []
   const blockedRanks = []
   const placedRanks = [...reservedItems]
-  orderedPositions.forEach((pos, i) => {
+  remainderPositions.forEach((pos, i) => {
     const rank = queue[i]
     if (rank == null) return
     placedRanks.push(rank)
@@ -111,6 +134,18 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15, onboardi
   // specifically to guarantee reveal order, so it must not get reshuffled in.
   const blockedQueueRemainder = buildNoisyQueue([...blockedRanks].sort((a, b) => a - b), noise)
   const blockedQueue = [...reservedItems, ...blockedQueueRemainder]
+
+  // The reserve's guarantee was checked in isolation (no semi-tile bonus, a
+  // conservative floor) — re-check against what's actually on this board, so
+  // the DR figure shown reflects the semi tiles' head start rather than the
+  // worst case. The reserve can only do as well or better with that bonus,
+  // never worse, so this can't flip a feasible goal to infeasible.
+  if (onboardingStatus?.feasible) {
+    const real = simulatePlaythrough({ ...board, semiPlacements, blockedQueue }, { drBudget: onboarding.drBudget })
+    if (real.reachedAt[onboarding.targetRank] !== undefined) {
+      onboardingStatus = { ...onboardingStatus, drSpentToTarget: real.reachedAt[onboarding.targetRank] }
+    }
+  }
 
   // Board 0 only guarantees small ranks (1-3) plus maxRank, not minRank, so
   // its variety check is max-only; other boards check both ends of the window.

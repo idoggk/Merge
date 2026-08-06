@@ -1,12 +1,25 @@
 import { valueOf, MAX_RANK } from './ranks'
-import { decompose } from './generateCandidate'
+import { decompose, splitToCount } from './generateCandidate'
 import { splitOversized, mergeUndersized } from './rankWindow'
 import { simulatePlaythrough } from './mergeSimulation'
 
 const CEILING = valueOf(MAX_RANK)
 const MAX_ITERATIONS = 40
 
-function decomposeReserved(value, minRank, maxRank, targetRank) {
+// The reserve only ever feeds the blocked queue — semi tiles are grid-fixed
+// and never draw from it — so its item count is capped by blocked tiles
+// specifically, not blocked+semi combined.
+function countBlockedTiles(tiles) {
+  let count = 0
+  for (const row of tiles) {
+    for (const state of row) {
+      if (state === 'blocked') count++
+    }
+  }
+  return count
+}
+
+function decomposeReserved(value, minRank, maxRank, targetRank, maxItems) {
   const items = decompose(value)
   // Cap at targetRank, not just maxRank: decompose() minimizes item count,
   // which for a large enough value can yield a single item already ABOVE
@@ -16,6 +29,14 @@ function decomposeReserved(value, minRank, maxRank, targetRank) {
   // to start at or below targetRank guarantees at least one of them either
   // IS targetRank directly, or a merge lands exactly on it on the way up.
   splitOversized(items, Math.min(maxRank, targetRank))
+  // Bias toward smaller items (more rank-1s), not just enough to pass through
+  // the target rank: a reserve of a few large, efficient items can get
+  // revealed and satisfy the goal almost for free, barely touching the
+  // player's DR grant. Splitting further so the climb happens through more,
+  // smaller pieces means more of it has to happen via actual generator-fueled
+  // merging, using more of the grant — capped at the tile budget so this
+  // never claims more slots than the board has to hold it.
+  splitToCount(items, Math.min(value, maxItems))
   mergeUndersized(items, minRank)
   // Descending — biggest items revealed earliest gets to the target rank in
   // the fewest DR, since a blocked-queue item's reveal timing depends on
@@ -42,9 +63,10 @@ function buildIsolatedTestBoard(board, reservedItems) {
 // considered. Returns null if infeasible within the chain's total value.
 export function computeOnboardingReserve(board, { drBudget, targetRank }) {
   const { minRank, maxRank } = board
+  const maxItems = countBlockedTiles(board.tiles)
 
   function attempt(value) {
-    const items = decomposeReserved(value, minRank, maxRank, targetRank)
+    const items = decomposeReserved(value, minRank, maxRank, targetRank, maxItems)
     const result = simulatePlaythrough(buildIsolatedTestBoard(board, items), { drBudget })
     return { ok: result.reachedAt[targetRank] !== undefined, items, result }
   }
