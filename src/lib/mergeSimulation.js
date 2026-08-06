@@ -1,5 +1,5 @@
 import { MAX_RANK } from './ranks'
-import { currentTier } from './generatorTier'
+import { currentTier, TIER2_UNLOCK_RANK } from './generatorTier'
 import { DEFAULT_TARGET_EV, computeProbs, createEvScheduler } from './luckyDrop'
 
 // 4-directional only — up/down/left/right, no diagonals.
@@ -273,14 +273,22 @@ export function simulatePlaythrough(board, options = {}) {
       break
     }
 
-    const tier = currentTier(currentMaxRank(state))
+    const maxRankHeld = currentMaxRank(state)
+    const tier = currentTier(maxRankHeld)
     if (drSpent + tier.cost > drBudget) {
       stopReason = 'budget-exhausted'
       break
     }
 
     drSpent += tier.cost
-    const spawnedRank = tier.normalRank + nextBonus()
+    // Lucky drops only open once the player holds a rank-7+ item — same
+    // threshold as the x2 tier unlock. Before that, every spend is a
+    // guaranteed normal roll; nextBonus() isn't called at all pre-unlock so
+    // its deficit-round-robin scheduler starts converging toward targetEv
+    // fresh from the first post-unlock spend, not diluted by forced-normal
+    // spends that came before the gate opened.
+    const bonus = maxRankHeld >= TIER2_UNLOCK_RANK ? nextBonus() : 0
+    const spawnedRank = tier.normalRank + bonus
     const spawnCell = findSpawnCell(state, spawnedRank)
     state.itemAt[spawnCell[0]][spawnCell[1]] = spawnedRank
     log?.({ type: 'spend', tier: tier.cost, cell: spawnCell, rank: spawnedRank })
