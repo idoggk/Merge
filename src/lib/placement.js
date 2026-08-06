@@ -2,6 +2,7 @@ import { computeDistances } from './boardDistance'
 import { buildNoisyQueue } from './buildNoisyQueue'
 import { generateCandidateInRange } from './generateCandidateInRange'
 import { generateCandidateWithSmallRanks } from './generateCandidateWithSmallRanks'
+import { valueOf } from './ranks'
 
 function fillableTiles(tiles) {
   const positions = []
@@ -27,9 +28,19 @@ function orderByDistance(positions, distances) {
   })
 }
 
-// Full placement pipeline for one board: generate items (exact sum to
+// Full generation pipeline for one board: generate items (exact sum to
 // blockedValue), order blocked/semi tiles by distance-to-open-tile, run the
-// ascending item list through the noisy queue, then assign positionally.
+// ascending item list through the noisy queue, then split the result:
+//
+// - semi tiles are grid-fixed (visible from the start), so they keep a
+//   {row, col, rank} placement.
+// - blocked tiles have no fixed position — a blocked tile isn't visible to
+//   the player until a merge next to it reveals it, and which physical tile
+//   that happens to be is decided by the playthrough simulation, not here.
+//   So blocked items become a position-independent ordered queue; only their
+//   reveal ORDER is controlled at generation time (and can be hand-reordered
+//   afterward) — this ordering doubles as the queue's default sequence.
+//
 // isFirstBoard scopes the small-rank guarantee to board index 0 only.
 export function placeItems(board, { isFirstBoard = false, noise = 0.15 } = {}) {
   const { tiles, blockedValue, minRank, maxRank } = board
@@ -38,20 +49,41 @@ export function placeItems(board, { isFirstBoard = false, noise = 0.15 } = {}) {
   const orderedPositions = orderByDistance(positions, distances)
 
   const ranks = isFirstBoard
-    ? generateCandidateWithSmallRanks(blockedValue, positions.length)
+    ? generateCandidateWithSmallRanks(blockedValue, positions.length, minRank, maxRank)
     : generateCandidateInRange(blockedValue, positions.length, minRank, maxRank)
 
   const queue = buildNoisyQueue(ranks, noise)
 
-  const placements = orderedPositions.map((pos, i) => ({
-    ...pos,
-    rank: queue[i] ?? null,
-  }))
+  const semiPlacements = []
+  const blockedRanks = []
+  orderedPositions.forEach((pos, i) => {
+    const rank = queue[i]
+    if (rank == null) return
+    if (tiles[pos.row][pos.col] === 'semi') {
+      semiPlacements.push({ row: pos.row, col: pos.col, rank })
+    } else {
+      blockedRanks.push(rank)
+    }
+  })
+
+  // The blocked queue has no grid position of its own, so its presentation
+  // order shouldn't just inherit whatever it happened to interleave with in
+  // the distance ordering above — re-noise it on its own so it reads as
+  // ascending-with-visible-local-variation rather than a flat ramp.
+  const blockedQueue = buildNoisyQueue([...blockedRanks].sort((a, b) => a - b), noise)
+
+  // Board 0 only guarantees small ranks (1-3) plus maxRank, not minRank, so
+  // its variety check is max-only; other boards check both ends of the window.
+  const isRange = minRank < maxRank
+  const hasMax = ranks.includes(maxRank)
+  const hasRangeVariety = !isRange ? null : isFirstBoard ? hasMax : hasMax && ranks.includes(minRank)
 
   return {
-    placements,
+    semiPlacements,
+    blockedQueue,
     itemCount: ranks.length,
     tileCount: positions.length,
-    sum: ranks.reduce((s, r) => s + 2 ** (r - 1), 0),
+    sum: ranks.reduce((s, r) => s + valueOf(r), 0),
+    hasRangeVariety,
   }
 }

@@ -8,7 +8,12 @@ import { loadState, saveState } from './lib/persistence'
 
 function initialState() {
   const persisted = loadState()
-  if (persisted?.boards?.length) return persisted
+  if (persisted?.boards?.length) {
+    return {
+      ...persisted,
+      boards: persisted.boards.map((b) => ({ semiPlacements: [], blockedQueue: [], ...b })),
+    }
+  }
   const first = createBoard('Board 1')
   return { boards: [first], presets: [] }
 }

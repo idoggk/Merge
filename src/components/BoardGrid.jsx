@@ -1,10 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { colorForRank, valueOf } from '../lib/ranks'
 
 const STATE_STYLE = {
   open: 'bg-violet-50 border-2 border-dashed border-violet-200',
   blocked: 'bg-indigo-950 border border-indigo-900 shadow-inner',
   semi: 'bg-amber-400 border border-amber-500 shadow-sm',
+}
+
+// Once a tile holds a placed item, its background becomes the rank color —
+// these borders keep the underlying blocked/semi state visible on top of it.
+// White reads reliably against every color in the rank ramp, so the state
+// is distinguished by border style (solid vs dashed) rather than color.
+const FILLED_BORDER_STYLE = {
+  blocked: 'border-[3px] border-solid border-white/90',
+  semi: 'border-[3px] border-dashed border-white/90',
 }
 
 const BRUSH_STYLE = {
@@ -21,14 +30,18 @@ const STATES = [
 
 export default function BoardGrid({ tiles, placements, onPaint, onFillAll }) {
   const [brush, setBrush] = useState('blocked')
-  const [painting, setPainting] = useState(false)
+  // A ref, not state: mousedown/mouseenter/mouseup fire faster than React
+  // can re-render, so a state-backed flag can be stale by the time the next
+  // tile's mouseenter checks it, letting the drag leak onto that tile.
+  const paintingRef = useRef(false)
 
   useEffect(() => {
-    if (!painting) return
-    const stop = () => setPainting(false)
+    const stop = () => {
+      paintingRef.current = false
+    }
     window.addEventListener('mouseup', stop)
     return () => window.removeEventListener('mouseup', stop)
-  }, [painting])
+  }, [])
 
   const placementByCell = new Map()
   for (const p of placements ?? []) {
@@ -97,22 +110,23 @@ export default function BoardGrid({ tiles, placements, onPaint, onFillAll }) {
                   onMouseDown={(e) => {
                     if (!onPaint) return
                     e.preventDefault()
-                    setPainting(true)
+                    paintingRef.current = true
                     paint(r, c)
                   }}
-                  onMouseEnter={() => painting && paint(r, c)}
+                  onMouseEnter={() => paintingRef.current && paint(r, c)}
                   onDragStart={(e) => e.preventDefault()}
-                  title={rank ? `rank ${rank} (${valueOf(rank)})` : state}
-                  className={`aspect-square rounded-lg text-base font-bold text-white flex items-center justify-center transition-all ${STATE_STYLE[state]} ${
-                    onPaint ? 'cursor-pointer hover:scale-[1.06] hover:shadow-lg hover:z-10' : ''
-                  }`}
-                  style={
-                    rank
-                      ? { backgroundColor: colorForRank(rank), borderColor: colorForRank(rank), borderWidth: 1 }
-                      : undefined
-                  }
+                  title={rank ? `rank ${rank} (${valueOf(rank)} DR) · ${state}` : state}
+                  className={`aspect-square rounded-lg text-white flex flex-col items-center justify-center leading-tight transition-all ${
+                    rank ? FILLED_BORDER_STYLE[state] : STATE_STYLE[state]
+                  } ${onPaint ? 'cursor-pointer hover:scale-[1.06] hover:shadow-lg hover:z-10' : ''}`}
+                  style={rank ? { backgroundColor: colorForRank(rank) } : undefined}
                 >
-                  {rank ?? ''}
+                  {rank && (
+                    <>
+                      <span className="text-base font-bold">{rank}</span>
+                      <span className="text-[10px] font-semibold opacity-85">{valueOf(rank)} DR</span>
+                    </>
+                  )}
                 </button>
               )
             }),
@@ -120,13 +134,22 @@ export default function BoardGrid({ tiles, placements, onPaint, onFillAll }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-4 text-xs text-slate-500">
+      <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
         {STATES.map(({ state, label }) => (
           <span key={state} className="flex items-center gap-1.5">
             <span className={`w-3.5 h-3.5 rounded-sm inline-block ${STATE_STYLE[state]}`} />
             {label}
           </span>
         ))}
+        <span className="flex items-center gap-1.5">
+          <span className="w-3.5 h-3.5 rounded-sm inline-block bg-slate-400 border-[3px] border-solid border-white" />
+          Filled + blocked
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-3.5 h-3.5 rounded-sm inline-block bg-slate-400 border-[3px] border-dashed border-white" />
+          Filled + semi
+        </span>
+        <span className="text-slate-400">· tile shows rank and its DR value</span>
         {onPaint && <span className="text-slate-400">· click or drag to paint the selected brush</span>}
       </div>
     </div>

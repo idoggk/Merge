@@ -24,6 +24,13 @@ export function createBoard(name, { rows = 5, cols = 8 } = {}) {
     blockedValue: 0,
     minRank: 1,
     maxRank: 12,
+    // Generated item layout, persisted so it survives reload and so the
+    // upcoming playthrough simulation has a fixed, reproducible board to run
+    // against. semiPlacements are grid-fixed ({row, col, rank}); blockedQueue
+    // is position-independent — which physical tile each entry lands on is
+    // decided at simulation time, only the reveal order is controlled here.
+    semiPlacements: [],
+    blockedQueue: [],
   }
 }
 
@@ -33,6 +40,8 @@ export function cloneBoard(board, name) {
     id: crypto.randomUUID(),
     name: name ?? `${board.name} copy`,
     tiles: board.tiles.map((row) => [...row]),
+    semiPlacements: board.semiPlacements.map((p) => ({ ...p })),
+    blockedQueue: [...board.blockedQueue],
   }
 }
 
