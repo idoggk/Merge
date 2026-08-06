@@ -57,23 +57,47 @@ function cellKey(state, r, c) {
 
 // A subsidy cell can receive a merge only if it's the board's one committed
 // "anchor" (or no anchor has been committed yet, in which case this cell
-// would become it). Open cells are always eligible. Without this, every
-// early spend - before any two fresh open items have coexisted long enough
-// to pair with each other - immediately drains whichever subsidy anchor it
-// happens to be nearest/reachable to, and a board with several separate
-// anchors drains them one by one before any open-open pairing ever forms,
-// costing MORE total DR than a player who simply ignored the board's
-// subsidy entirely (see the merge-priority comments below for why open-open
-// pairing is already preferred - this closes the remaining gap: reachability
-// spans the whole open area regardless of where a fresh item spawns, so
-// avoiding *that* one subsidy neighbor at spawn time isn't enough on its
-// own). Committing to a single anchor mirrors the optimal strategy: use
-// exactly one anchor's existing free value as a discount, feed it with
-// freshly-built matching items one level at a time, and leave every other
-// anchor untouched rather than splitting effort across all of them.
+// would become it - see below). Open cells are always eligible. Without
+// this, every early spend - before any two fresh open items have coexisted
+// long enough to pair with each other - immediately drains whichever
+// subsidy anchor it happens to be nearest/reachable to, and a board with
+// several separate anchors drains them one by one before any open-open
+// pairing ever forms, costing MORE total DR than a player who simply
+// ignored the board's subsidy entirely (see the merge-priority comments
+// below for why open-open pairing is already preferred - this closes the
+// remaining gap: reachability spans the whole open area regardless of where
+// a fresh item spawns, so avoiding *that* one subsidy neighbor at spawn time
+// isn't enough on its own). Committing to a single anchor mirrors the
+// optimal strategy: two subsidy items can never merge with each other
+// (neither is ever a mover), so using more than one is never better than
+// using the single best one alone - splitting effort across several just
+// strands the rest at whatever value they started with.
+//
+// Before any anchor is committed, only the CURRENTLY largest-valued subsidy
+// item on the board (already visible, or already revealed) is eligible -
+// every smaller one is skipped, so a fresh open item climbing rank 1, 2,
+// 3... doesn't lock in early on the first (typically smallest) same-rank
+// subsidy match it happens to reach. The optimal fresh-DR cost to reach a
+// target using one anchor of value K is (target's value - K), independent
+// of how long the climb to K takes - so holding out for the biggest
+// available K, rather than settling for whichever is nearest, is strictly
+// at least as good, never worse.
 function isEligibleReceiver(state, r, c) {
   if (!state.subsidyOrigin[r][c]) return true
-  return state.activeAnchorKey === null || state.activeAnchorKey === cellKey(state, r, c)
+  if (state.activeAnchorKey !== null) return state.activeAnchorKey === cellKey(state, r, c)
+  return state.itemAt[r][c] === currentMaxSubsidyRank(state)
+}
+
+function currentMaxSubsidyRank(state) {
+  let max = 0
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      if (state.subsidyOrigin[r][c] && state.itemAt[r][c] != null && state.itemAt[r][c] > max) {
+        max = state.itemAt[r][c]
+      }
+    }
+  }
+  return max
 }
 
 // Fast path: two same-rank items sitting directly next to each other.
