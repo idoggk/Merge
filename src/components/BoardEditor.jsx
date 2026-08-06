@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Wand2, BookmarkPlus, CheckCircle2, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react'
 import BoardGrid from './BoardGrid'
+import SimulationReport from './SimulationReport'
 import Card from './ui/Card'
 import Button from './ui/Button'
 import NumberField from './ui/NumberField'
@@ -236,6 +237,8 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
             )}
           </div>
         </Card>
+
+        <SimulationReport board={board} />
 
         <Card title="Suggestions" subtitle="Save a layout you like, apply it elsewhere">
           <div className="flex flex-col gap-3">
