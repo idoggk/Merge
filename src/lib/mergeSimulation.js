@@ -13,23 +13,35 @@ const DELTAS = [
 function buildInitialState(board) {
   const { rows, cols, tiles, semiPlacements, blockedQueue } = board
   const itemAt = Array.from({ length: rows }, () => Array(cols).fill(null))
-  // stuck: true for a semi tile that hasn't yet received its one qualifying
-  // merge — its item can be merged INTO, but can't itself move/vacate.
-  const stuck = Array.from({ length: rows }, () => Array(cols).fill(false))
+  // subsidyOrigin: true for any cell whose tile started blocked or semi —
+  // permanent, based on the tile itself rather than whatever item currently
+  // sits there. An item on one of these cells can only ever be a merge
+  // RECEIVER, never a mover, even after growing from earlier merges into it —
+  // a merge only happens when a player brings a same-rank item that's
+  // currently sitting on an ordinary open tile (i.e. something the generator
+  // placed, directly or by a few hops of open-open merges) to one of these,
+  // or to another open item. Two subsidy-origin items sitting adjacent, or
+  // reachable, never merge with each other on their own — that would be a
+  // free chain reaction with no player action (DR spend) behind it.
+  const subsidyOrigin = Array.from({ length: rows }, () => Array(cols).fill(false))
   // locked: true for a blocked tile with no item, not yet revealed.
   const locked = Array.from({ length: rows }, () => Array(cols).fill(false))
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (tiles[r][c] === 'blocked') locked[r][c] = true
+      if (tiles[r][c] === 'blocked') {
+        locked[r][c] = true
+        subsidyOrigin[r][c] = true
+      } else if (tiles[r][c] === 'semi') {
+        subsidyOrigin[r][c] = true
+      }
     }
   }
   for (const p of semiPlacements) {
     itemAt[p.row][p.col] = p.rank
-    stuck[p.row][p.col] = true
   }
 
-  return { rows, cols, itemAt, stuck, locked, blockedQueue: [...blockedQueue], blockedQueueIndex: 0 }
+  return { rows, cols, itemAt, subsidyOrigin, locked, blockedQueue: [...blockedQueue], blockedQueueIndex: 0 }
 }
 
 function inBounds(state, r, c) {
@@ -49,11 +61,11 @@ function findDirectAdjacentMerge(state) {
         const nc = c + dc
         if (!inBounds(state, nr, nc) || state.itemAt[nr][nc] !== rank) continue
 
-        const hereMovable = !state.stuck[r][c]
-        const thereMovable = !state.stuck[nr][nc]
+        const hereMovable = !state.subsidyOrigin[r][c]
+        const thereMovable = !state.subsidyOrigin[nr][nc]
         if (hereMovable) return { mover: [r, c], receiver: [nr, nc], rank }
         if (thereMovable) return { mover: [nr, nc], receiver: [r, c], rank }
-        // Neither side can vacate (both un-cleared semi tiles) — not legal.
+        // Neither side is an open-origin item — nothing here to drive the merge.
       }
     }
   }
@@ -129,8 +141,8 @@ function findReachableMerge(state) {
           const [ar, ac] = cells[i]
           const [br, bc] = cells[j]
           const rank = state.itemAt[ar][ac]
-          if (!state.stuck[ar][ac]) return { mover: [ar, ac], receiver: [br, bc], rank }
-          if (!state.stuck[br][bc]) return { mover: [br, bc], receiver: [ar, ac], rank }
+          if (!state.subsidyOrigin[ar][ac]) return { mover: [ar, ac], receiver: [br, bc], rank }
+          if (!state.subsidyOrigin[br][bc]) return { mover: [br, bc], receiver: [ar, ac], rank }
         }
       }
     }
@@ -163,7 +175,6 @@ function performMerge(state, merge, recordRank, log) {
 
   state.itemAt[rr][rc] = newRank
   state.itemAt[mr][mc] = null
-  if (state.stuck[rr][rc]) state.stuck[rr][rc] = false // semi tile fully cleared
 
   log?.({ type: 'merge', from: [mr, mc], into: [rr, rc], rank: merge.rank, newRank })
   recordRank(newRank)
