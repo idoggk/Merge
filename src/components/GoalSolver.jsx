@@ -11,6 +11,8 @@ const INFEASIBLE_MESSAGE = {
   unreachable: () => "This goal isn't reachable at all on this board's tile layout — try a lower target rank or a bigger DR grant.",
   'tile-budget-too-tight': () =>
     "This board's blocked/semi tiles are too few to host this goal's reserve without losing some of the board's value elsewhere. Add more blocked/semi tiles, or lower the target rank.",
+  'blocked-by-other-subsidy': () =>
+    "This board's other semi tiles ended up with a bigger item than this goal's own reserve, which takes over as the board's one usable subsidy anchor and breaks the guarantee. Try regenerating, using fewer semi tiles, or lowering the target rank.",
 }
 
 export default function GoalSolver({ board, onChange }) {

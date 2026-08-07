@@ -157,19 +157,6 @@ function generatePlacement(board, { isFirstBoard = false, noise = 0.15, onboardi
   const blockedQueueRemainder = buildNoisyQueue([...blockedRanks].sort((a, b) => a - b), noise)
   const blockedQueue = [...reservedBlockedItems, ...blockedQueueRemainder]
 
-  // The reserve's guarantee was checked in isolation (no semi-tile bonus
-  // beyond what it hosts itself, a conservative floor) — re-check against
-  // what's actually on this board, so the DR figure shown reflects the
-  // remainder's head start rather than the worst case. The reserve can only
-  // do as well or better with that bonus, never worse, so this can't flip a
-  // feasible goal to infeasible.
-  if (onboardingStatus?.feasible) {
-    const real = simulatePlaythrough({ ...board, semiPlacements, blockedQueue }, { drBudget: onboarding.drBudget })
-    if (real.reachedAt[onboarding.targetRank] !== undefined) {
-      onboardingStatus = { ...onboardingStatus, drSpentToTarget: real.reachedAt[onboarding.targetRank] }
-    }
-  }
-
   // Board 0 only guarantees small ranks (1-3) plus maxRank, not minRank, so
   // its variety check is max-only; other boards check both ends of the window.
   const isRange = minRank < maxRank
@@ -187,23 +174,42 @@ function generatePlacement(board, { isFirstBoard = false, noise = 0.15, onboardi
   }
 }
 
-// The reserve's isolated check (computeOnboardingReserve) guarantees IT can
-// reach the target rank on its own, but splitting blockedValue into two
-// independently-decomposed pieces (reserve + remainder) can need more total
-// items than the tile budget has - even on a board where generating the
-// whole value as one piece would fit fine (splitting a binary number rarely
-// reduces, and often inflates, total set bits). When that happens the
-// remainder's own generation silently truncates to fit (see the comment
-// above blockedRanks), quietly losing part of blockedValue's sum. That
-// violates the one hard invariant here, so rather than try to predict the
-// clash bit-by-bit up front, generate for real and check: if hosting the
-// reserve would have cost any sum, fall back to generating without one.
+// generatePlacement's onboarding guarantee is checked in ISOLATION
+// (computeOnboardingReserve tests the reserve alone, ignoring whatever the
+// remainder ends up placing) - two things can make that guarantee not
+// actually hold on the real, combined board, so both get verified here
+// against the real thing rather than trusted blindly, falling back to plain
+// (no-onboarding) generation either way:
+//
+// 1. Splitting blockedValue into two independently-decomposed pieces
+//    (reserve + remainder) can need more total items than the tile budget
+//    has, even on a board where generating the whole value as one piece
+//    would fit fine (splitting a binary number rarely reduces, and often
+//    inflates, total set bits) - the remainder's own generation then
+//    silently truncates to fit, quietly losing part of blockedValue's sum.
+// 2. The remainder can place its OWN items on the board's other semi
+//    tiles, and under mergeSimulation.js's single-biggest-anchor merge rule,
+//    a bigger remainder item can steal the anchor role away from the one
+//    the reserve was specifically counting on — the reserve's isolated
+//    guarantee doesn't carry over to the real board in that case.
 export function placeItems(board, options = {}) {
   const { isFirstBoard = false, noise = 0.15, onboarding = null } = options
   const result = generatePlacement(board, { isFirstBoard, noise, onboarding })
-  if (onboarding && result.onboardingStatus?.feasible && result.sum !== board.blockedValue) {
+  if (!onboarding || !result.onboardingStatus?.feasible) return result
+
+  if (result.sum !== board.blockedValue) {
     const fallback = generatePlacement(board, { isFirstBoard, noise, onboarding: null })
     return { ...fallback, onboardingStatus: { feasible: false, reason: 'tile-budget-too-tight' } }
   }
-  return result
+
+  const real = simulatePlaythrough(
+    { ...board, semiPlacements: result.semiPlacements, blockedQueue: result.blockedQueue },
+    { drBudget: onboarding.drBudget },
+  )
+  const drSpentToTarget = real.reachedAt[onboarding.targetRank]
+  if (drSpentToTarget === undefined) {
+    const fallback = generatePlacement(board, { isFirstBoard, noise, onboarding: null })
+    return { ...fallback, onboardingStatus: { feasible: false, reason: 'blocked-by-other-subsidy' } }
+  }
+  return { ...result, onboardingStatus: { ...result.onboardingStatus, drSpentToTarget } }
 }

@@ -1,5 +1,5 @@
 import { valueOf, MAX_RANK } from './ranks'
-import { decompose, splitToCount } from './generateCandidate'
+import { decompose } from './generateCandidate'
 import { splitOversized, mergeUndersized } from './rankWindow'
 import { simulatePlaythrough } from './mergeSimulation'
 
@@ -18,7 +18,7 @@ function countTiles(tiles) {
   return { blocked, semi }
 }
 
-function decomposeReserved(value, minRank, maxRank, targetRank, maxItems) {
+function decomposeReserved(value, minRank, maxRank, targetRank) {
   const items = decompose(value)
   // Cap at targetRank, not just maxRank: decompose() minimizes item count,
   // which for a large enough value can yield a single item already ABOVE
@@ -28,33 +28,26 @@ function decomposeReserved(value, minRank, maxRank, targetRank, maxItems) {
   // to start at or below targetRank guarantees at least one of them either
   // IS targetRank directly, or a merge lands exactly on it on the way up.
   splitOversized(items, Math.min(maxRank, targetRank))
-  // Bias toward smaller items (more rank-1s), not just enough to pass through
-  // the target rank: a reserve of a few large, efficient items can get
-  // revealed and satisfy the goal almost for free, barely touching the
-  // player's DR grant. Splitting further so the climb happens through more,
-  // smaller pieces means more of it has to happen via actual generator-fueled
-  // merging, using more of the grant — capped at the tile budget so this
-  // never claims more slots than the board has to hold it.
-  splitToCount(items, Math.min(value, maxItems))
   mergeUndersized(items, minRank)
   return items
 }
 
 // Existing semi tiles are visible and mergeable from turn zero, unlike
-// blocked tiles which need a merge nearby to reveal anything at all — so the
-// player's very first move can otherwise be "spend DR just to bootstrap a
-// reveal" before any real progress happens. Hosting the smallest reserve
-// items (rank-1s) there instead means the very first generator spend (which
-// also defaults to rank-1) has something to merge into immediately. Doesn't
-// add tiles — only ever uses however many semi tiles are already painted,
+// blocked tiles which need a merge nearby to reveal anything at all. That
+// matters because only the single largest subsidy item anywhere on the
+// board can ever be a useful merge target (see isEligibleReceiver in
+// mergeSimulation.js — two subsidy items never merge with each other, so
+// splitting effort across several is never better than using the best one
+// alone): that one item needs to be guaranteed visible from the very
+// start, not left to chance in the blocked queue where it might never get
+// revealed if no merge happens to land next to it. Hosting the BIGGEST
+// reserve items on semi tiles (descending) guarantees this. Doesn't add
+// tiles — only ever uses however many semi tiles are already painted,
 // falling back to the blocked queue for whatever doesn't fit.
 function splitReserveByHost(items, semiTileCount) {
-  const ascending = [...items].sort((a, b) => a - b)
-  const semiItems = ascending.slice(0, Math.min(semiTileCount, ascending.length))
-  // Descending — biggest items revealed earliest gets to the target rank in
-  // the fewest DR, since a blocked-queue item's reveal timing depends on
-  // board/merge activity, not on how much DR has been spent.
-  const blockedItems = ascending.slice(semiItems.length).sort((a, b) => b - a)
+  const descending = [...items].sort((a, b) => b - a)
+  const semiItems = descending.slice(0, Math.min(semiTileCount, descending.length))
+  const blockedItems = descending.slice(semiItems.length)
   return { semiItems, blockedItems }
 }
 
@@ -92,20 +85,10 @@ function buildIsolatedTestBoard(board, semiItems, blockedItems) {
 // infeasible within the chain's total value.
 export function computeOnboardingReserve(board, { drBudget, targetRank }) {
   const { minRank, maxRank } = board
-  const { blocked: blockedTileCount, semi: semiTileCount } = countTiles(board.tiles)
-  // The reserve is meant to be a small early checkpoint, not a claim on most
-  // of the board — it's typically a tiny fraction of blockedValue (a handful
-  // of DR against a board designed for hundreds). Splitting it into as many
-  // items as its own value would allow (up to every tile on the board) can
-  // leave too few slots for the remainder to represent its own — usually far
-  // larger — share, which can silently drop a big chunk of it (item count
-  // beyond the tile budget is a soft constraint, and its minimum possible
-  // count can exceed a handful of leftover slots). Capping at half the
-  // board's tiles keeps the reserve's footprint proportionate.
-  const maxItems = Math.max(1, Math.floor((blockedTileCount + semiTileCount) / 2))
+  const { semi: semiTileCount } = countTiles(board.tiles)
 
   function attempt(value) {
-    const items = decomposeReserved(value, minRank, maxRank, targetRank, maxItems)
+    const items = decomposeReserved(value, minRank, maxRank, targetRank)
     const { semiItems, blockedItems } = splitReserveByHost(items, semiTileCount)
     const result = simulatePlaythrough(buildIsolatedTestBoard(board, semiItems, blockedItems), { drBudget })
     return { ok: result.reachedAt[targetRank] !== undefined, semiItems, blockedItems, result }
