@@ -1,25 +1,18 @@
-import { currentTier, TIER2_UNLOCK_RANK } from './generatorTier'
-import { DEFAULT_TARGET_EV, computeProbs, createEvScheduler } from './luckyDrop'
-import {
-  simulatePlaythrough,
-  buildInitialState,
-  inBounds,
-  isEligibleReceiver,
-  currentMaxRank,
-  buildReachability,
-  performMerge,
-} from './mergeSimulation'
+import { simulatePlaythrough, buildInitialState, inBounds, isEligibleReceiver, buildReachability, performMerge } from './mergeSimulation'
 
-// An interactive counterpart to simulatePlaythrough: the same rule
-// primitives (buildInitialState, isEligibleReceiver, buildReachability,
-// performMerge, tier gating, lucky drops), but every action is player-
-// initiated rather than picked by a greedy heuristic - built so the
-// economist can manually play a board and compare what they did against
-// what the automatic simulator predicts, on the exact same rules.
-export function createPlaySession(board, { targetEv = DEFAULT_TARGET_EV } = {}) {
+// An interactive counterpart to simulatePlaythrough: the same merge/reveal
+// rule primitives (buildInitialState, isEligibleReceiver, buildReachability,
+// performMerge), but every action is player-initiated rather than picked by
+// a greedy heuristic - built so the economist can manually play a board and
+// compare what they did against what the automatic simulator predicts.
+//
+// The generator here always spawns a plain rank 1 for 1 DR - no tier gating,
+// no lucky-drop bonus. Those model the *automatic* simulator's aggregate
+// pacing; this tool exists to isolate and check merge/reveal mechanics by
+// hand, and tier/lucky-drop randomness would only obscure that.
+export function createPlaySession(board) {
   const state = buildInitialState(board)
-  const nextBonus = createEvScheduler(computeProbs(targetEv))
-  const session = { board, state, nextBonus, drSpent: 0, reachedAt: {}, events: [], pendingSpawn: null }
+  const session = { board, state, drSpent: 0, reachedAt: {}, events: [], pendingSpawn: null }
 
   const recordRank = makeRecordRank(session)
   for (let r = 0; r < state.rows; r++) {
@@ -46,15 +39,6 @@ function logEvent(session, event) {
   session.events.push({ drSpent: session.drSpent, ...event })
 }
 
-// What the generator button would do right now, without spending anything -
-// same tier/lucky-drop gating simulatePlaythrough uses, so the UI can show
-// the player the cost and whether lucky drops are currently live.
-export function generatorInfo(session) {
-  const maxRankHeld = currentMaxRank(session.state)
-  const tier = currentTier(maxRankHeld)
-  return { cost: tier.cost, normalRank: tier.normalRank, luckyDropsActive: maxRankHeld >= TIER2_UNLOCK_RANK }
-}
-
 export function canSpendGenerator(session) {
   if (session.pendingSpawn) return false
   const { state } = session
@@ -66,20 +50,15 @@ export function canSpendGenerator(session) {
   return false
 }
 
-// Spends DR and produces a pending item the player must then place with
-// placeSpawn - unlike the auto-simulator's findSpawnCell heuristic, here the
-// PLAYER decides where it lands, same as dragging a piece out of a real
+// Spends 1 DR and produces a pending rank-1 item the player must then place
+// with placeSpawn - unlike the auto-simulator's findSpawnCell heuristic, here
+// the PLAYER decides where it lands, same as dragging a piece out of a real
 // generator's dock.
 export function spendGenerator(session) {
   if (!canSpendGenerator(session)) return session
-  const { state } = session
-  const maxRankHeld = currentMaxRank(state)
-  const tier = currentTier(maxRankHeld)
-  session.drSpent += tier.cost
-  const bonus = maxRankHeld >= TIER2_UNLOCK_RANK ? session.nextBonus() : 0
-  const rank = tier.normalRank + bonus
-  session.pendingSpawn = { rank }
-  logEvent(session, { type: 'spend', tier: tier.cost, rank })
+  session.drSpent += 1
+  session.pendingSpawn = { rank: 1 }
+  logEvent(session, { type: 'spend', tier: 1, rank: 1 })
   return session
 }
 
