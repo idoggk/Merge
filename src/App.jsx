@@ -1,10 +1,16 @@
 import { useState } from 'react'
-import { Save, Puzzle } from 'lucide-react'
+import { Save, Puzzle, LayoutGrid, Gamepad2 } from 'lucide-react'
 import BoardList from './components/BoardList'
 import BoardEditor from './components/BoardEditor'
+import PlayTester from './components/PlayTester'
 import Button from './components/ui/Button'
 import { createBoard, cloneBoard } from './lib/board'
 import { loadState, saveState } from './lib/persistence'
+
+const MODES = [
+  { id: 'editor', label: 'Editor', icon: LayoutGrid },
+  { id: 'play', label: 'Play tester', icon: Gamepad2 },
+]
 
 function initialState() {
   const persisted = loadState()
@@ -30,6 +36,7 @@ function App() {
   const { boards, presets } = state
   const [activeId, setActiveId] = useState(() => state.boards[0].id)
   const [savedAt, setSavedAt] = useState(null)
+  const [mode, setMode] = useState('editor')
 
   const activeIndex = boards.findIndex((b) => b.id === activeId)
   const activeBoard = boards[activeIndex] ?? boards[0]
@@ -94,6 +101,21 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+              {MODES.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setMode(id)}
+                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
+                    mode === id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Icon size={14} strokeWidth={2.25} />
+                  {label}
+                </button>
+              ))}
+            </div>
             {savedAt && <span className="text-xs text-slate-400">Saved {savedAt.toLocaleTimeString()}</span>}
             <Button variant="dark" icon={Save} onClick={handleSave}>
               Save
@@ -112,7 +134,7 @@ function App() {
           onRemove={removeBoard}
           onMove={moveBoard}
         />
-        {activeBoard && (
+        {activeBoard && mode === 'editor' && (
           <BoardEditor
             key={activeBoard.id}
             board={activeBoard}
@@ -122,6 +144,7 @@ function App() {
             onSavePreset={savePreset}
           />
         )}
+        {activeBoard && mode === 'play' && <PlayTester key={activeBoard.id} board={activeBoard} />}
       </main>
     </div>
   )

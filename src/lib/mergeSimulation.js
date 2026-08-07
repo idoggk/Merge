@@ -3,14 +3,14 @@ import { currentTier, TIER2_UNLOCK_RANK } from './generatorTier'
 import { DEFAULT_TARGET_EV, computeProbs, createEvScheduler } from './luckyDrop'
 
 // 4-directional only — up/down/left/right, no diagonals.
-const DELTAS = [
+export const DELTAS = [
   [-1, 0],
   [1, 0],
   [0, -1],
   [0, 1],
 ]
 
-function buildInitialState(board) {
+export function buildInitialState(board) {
   const { rows, cols, tiles, semiPlacements, blockedQueue } = board
   const itemAt = Array.from({ length: rows }, () => Array(cols).fill(null))
   // subsidyOrigin: true for any cell whose tile started blocked or semi —
@@ -47,11 +47,11 @@ function buildInitialState(board) {
   return { rows, cols, itemAt, subsidyOrigin, locked, blockedQueue: [...blockedQueue], blockedQueueIndex: 0, activeAnchorKey: null }
 }
 
-function inBounds(state, r, c) {
+export function inBounds(state, r, c) {
   return r >= 0 && r < state.rows && c >= 0 && c < state.cols
 }
 
-function cellKey(state, r, c) {
+export function cellKey(state, r, c) {
   return r * state.cols + c
 }
 
@@ -82,13 +82,13 @@ function cellKey(state, r, c) {
 // of how long the climb to K takes - so holding out for the biggest
 // available K, rather than settling for whichever is nearest, is strictly
 // at least as good, never worse.
-function isEligibleReceiver(state, r, c) {
+export function isEligibleReceiver(state, r, c) {
   if (!state.subsidyOrigin[r][c]) return true
   if (state.activeAnchorKey !== null) return state.activeAnchorKey === cellKey(state, r, c)
   return state.itemAt[r][c] === currentMaxSubsidyRank(state)
 }
 
-function currentMaxSubsidyRank(state) {
+export function currentMaxSubsidyRank(state) {
   let max = 0
   for (let r = 0; r < state.rows; r++) {
     for (let c = 0; c < state.cols; c++) {
@@ -139,17 +139,18 @@ function scanDirectAdjacent(state, requireBothOpen) {
   return null
 }
 
-// Slow path: a player can drag a piece across any open space to reach a
-// match, not just one grid-step — otherwise generator spawns scattering
-// across a big board can converge into a deadlock (e.g. a checkerboard of
-// alternating ranks where no two equal ranks are ever directly adjacent,
-// yet plenty of connecting empty space exists). Union-find over cells:
-// empty-empty and occupied-empty pairs connect; locked/unrevealed tiles are
-// obstacles (never unioned) since a piece can't be dragged through them.
-// Occupied-occupied pairs of different rank are deliberately NOT unioned —
-// two same-rank items shouldn't be considered connected merely because an
-// unrelated third item happens to sit between them with no way around.
-function findReachableMerge(state) {
+// Union-find over cells: empty-empty and occupied-empty pairs connect;
+// locked/unrevealed tiles are obstacles (never unioned) since a piece can't
+// be dragged through them. Occupied-occupied pairs are deliberately NOT
+// unioned directly — two same-rank items shouldn't be considered connected
+// merely because an unrelated third item happens to sit between them with
+// no way around; only shared empty space connects them. This is what lets a
+// player drag a piece across any open space to reach a match, not just one
+// grid-step — otherwise generator spawns scattering across a big board
+// could converge into a deadlock (e.g. a checkerboard of alternating ranks
+// where no two equal ranks are ever directly adjacent, yet plenty of
+// connecting empty space exists).
+export function buildReachability(state) {
   const { rows, cols } = state
   const parent = Array.from({ length: rows * cols }, (_, i) => i)
   const idx = (r, c) => r * cols + c
@@ -185,6 +186,15 @@ function findReachableMerge(state) {
     }
   }
 
+  return { find: (r, c) => find(idx(r, c)), sameComponent: (r1, c1, r2, c2) => find(idx(r1, c1)) === find(idx(r2, c2)) }
+}
+
+// Slow path: same-rank items connected via shared open space, not just
+// directly adjacent (see buildReachability).
+function findReachableMerge(state) {
+  const { rows, cols } = state
+  const reach = buildReachability(state)
+
   // Group occupied cells by (connected component, rank), in row-major scan
   // order, so the result is deterministic.
   const byRoot = new Map()
@@ -192,7 +202,7 @@ function findReachableMerge(state) {
     for (let c = 0; c < cols; c++) {
       const rank = state.itemAt[r][c]
       if (rank == null) continue
-      const root = find(idx(r, c))
+      const root = reach.find(r, c)
       if (!byRoot.has(root)) byRoot.set(root, new Map())
       const byRank = byRoot.get(root)
       if (!byRank.has(rank)) byRank.set(rank, [])
@@ -229,7 +239,7 @@ function findLegalMerge(state) {
   return findDirectAdjacentMerge(state) ?? findReachableMerge(state)
 }
 
-function revealNeighbors(state, [r, c], recordRank, log) {
+export function revealNeighbors(state, [r, c], recordRank, log) {
   for (const [dr, dc] of DELTAS) {
     const nr = r + dr
     const nc = c + dc
@@ -243,7 +253,7 @@ function revealNeighbors(state, [r, c], recordRank, log) {
   }
 }
 
-function performMerge(state, merge, recordRank, log) {
+export function performMerge(state, merge, recordRank, log) {
   const [mr, mc] = merge.mover
   const [rr, rc] = merge.receiver
   const newRank = merge.rank + 1
@@ -303,7 +313,7 @@ function findSpawnCellNear(state, rank, openOnly) {
   return null
 }
 
-function currentMaxRank(state) {
+export function currentMaxRank(state) {
   let max = 0
   for (let r = 0; r < state.rows; r++) {
     for (let c = 0; c < state.cols; c++) {
