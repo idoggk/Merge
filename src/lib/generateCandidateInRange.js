@@ -1,10 +1,16 @@
 import { valueOf } from './ranks'
 import { generateCandidate } from './generateCandidate'
-import { splitOversized, mergeUndersized, popcount } from './rankWindow'
+import { splitOversized, raiseUndersized, popcount } from './rankWindow'
 
-// Best-effort rank-window variant of generateCandidate. Sum is always exact;
-// item count and the [minRank, maxRank] window are soft and may drift when
-// they can't be satisfied together (e.g. a lone unmatched undersized item).
+// Rank-window variant of generateCandidate. The [minRank, maxRank] window is
+// a hard floor/ceiling; item count is still soft. Sum is exact UNLESS the
+// target isn't a multiple of valueOf(minRank), in which case there is no
+// exact decomposition using only minRank-or-above items at all (every such
+// item's value is itself a multiple of valueOf(minRank), so anything they
+// sum to is too) — raiseUndersized rounds up by the smallest amount that
+// fixes that (at most valueOf(minRank) - 1) rather than leaving an
+// out-of-window item behind. Never rounds down, so the board's subsidy
+// never comes in under what was configured, only (rarely) slightly over.
 //
 // When minRank < maxRank (an actual range, not a fixed rank), one item at
 // minRank and one at maxRank are reserved up front so the result always
@@ -19,14 +25,14 @@ export function generateCandidateInRange(target, desiredCount, minRank, maxRank)
     const remainderTarget = target - reservedSum
     if (remainderTarget >= 0 && popcount(remainderTarget) <= desiredCount - 2) {
       const remainderRanks = generateCandidate(remainderTarget, desiredCount - 2)
+      raiseUndersized(remainderRanks, minRank)
       splitOversized(remainderRanks, maxRank)
-      mergeUndersized(remainderRanks, minRank)
       return [minRank, maxRank, ...remainderRanks].sort((a, b) => a - b)
     }
   }
 
   const ranks = generateCandidate(target, desiredCount)
+  raiseUndersized(ranks, minRank)
   splitOversized(ranks, maxRank)
-  mergeUndersized(ranks, minRank)
   return ranks.sort((a, b) => a - b)
 }

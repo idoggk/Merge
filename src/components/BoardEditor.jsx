@@ -107,7 +107,12 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
     setPresetName('')
   }
 
-  const sumOk = stats.hasLayout && stats.sum === board.blockedValue
+  // Sum can legitimately come in ABOVE target (never below) - see
+  // generateCandidateInRange/raiseUndersized: when target isn't a multiple
+  // of valueOf(minRank), there's no exact way to keep every item at or
+  // above minRank, so it rounds up by the smallest amount that fixes that.
+  const sumOk = stats.hasLayout && stats.sum >= board.blockedValue
+  const overallocated = stats.hasLayout && stats.sum > board.blockedValue
   const countOk = stats.hasLayout && stats.itemCount === blockedTileCount
   const varietyOk = stats.hasRangeVariety !== false
 
@@ -266,6 +271,13 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
                       {varietyOk ? 'yes' : 'no'}
                     </span>
                   </div>
+                )}
+                {overallocated && (
+                  <p className="text-xs text-amber-600">
+                    Rounded up by {stats.sum - board.blockedValue} DR — {board.blockedValue} isn't a multiple of{' '}
+                    {valueOf(board.minRank)} (this board's min rank's value), so keeping every item at rank{' '}
+                    {board.minRank}+ needs slightly more than the exact target.
+                  </p>
                 )}
                 {!countOk && <p className="text-xs text-amber-600">Best-effort undershoot — rank window couldn't be fully satisfied.</p>}
                 {!varietyOk && (

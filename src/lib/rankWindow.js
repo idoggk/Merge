@@ -1,4 +1,5 @@
-import { MIN_RANK } from './ranks'
+import { MIN_RANK, valueOf } from './ranks'
+import { decompose } from './generateCandidate'
 
 // The minimum number of power-of-two-valued items that can sum to `target`
 // (repetition allowed) is provably its population count: any representation
@@ -36,7 +37,11 @@ export function splitOversized(ranks, maxRank) {
 }
 
 // Merge pairs of equal-rank items below minRank up one rank at a time.
-// A lone item with no matching pair is left below minRank (best-effort).
+// A lone item with no matching pair is left below minRank (best-effort) -
+// used where item count needs to stay exactly as generated (board 0's
+// small-rank guarantee already puts a rank-1/2/3 floor in place regardless,
+// so a leftover odd one out there isn't the problem raiseUndersized exists
+// for below).
 export function mergeUndersized(ranks, minRank) {
   let changed = true
   while (changed) {
@@ -56,4 +61,28 @@ export function mergeUndersized(ranks, minRank) {
       }
     }
   }
+}
+
+// Removes every item below minRank and replaces them with a clean
+// decomposition of their combined value - rounded UP to the nearest
+// multiple of valueOf(minRank) if it isn't one already, since a value that
+// isn't such a multiple can never be exactly represented using only
+// minRank-or-above (power-of-two) items. Unlike mergeUndersized (which
+// leaves an unpaired leftover below minRank), this makes the rank floor a
+// hard constraint - the sum may overallocate by at most valueOf(minRank) - 1
+// as the price of that, on top of whatever it's called on. Item count is
+// unaffected by the rest of the list; the replacement decomposition's own
+// count is whatever decompose() needs (its minimum, one item per set bit).
+export function raiseUndersized(ranks, minRank) {
+  const minValue = valueOf(minRank)
+  let strayValue = 0
+  for (let i = ranks.length - 1; i >= 0; i--) {
+    if (ranks[i] < minRank) {
+      strayValue += valueOf(ranks[i])
+      ranks.splice(i, 1)
+    }
+  }
+  if (strayValue === 0) return
+  const roundedValue = Math.ceil(strayValue / minValue) * minValue
+  ranks.push(...decompose(roundedValue))
 }

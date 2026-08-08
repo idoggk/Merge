@@ -70,16 +70,37 @@ placed items, so early merges always have small pieces to combine. This is
 implemented via `generateCandidateWithSmallRanks` and should stay scoped to
 board index 0 only, not all boards.
 
-**Item generation invariant: exact sum, best-effort everything else.**
+**Item generation invariant: exact sum, best-effort everything else — except
+the rank floor on non-first boards, which is now hard.**
 `generateCandidate(target, desiredCount)` decomposes `target` into powers of
 two (binary decomposition) then repeatedly splits the largest splittable item
 in half until the item count reaches `desiredCount`. This **always**
-preserves the exact sum. `generateCandidateInRange` additionally tries to
-respect a `[minRank, maxRank]` window by splitting oversized items down and
-merging undersized pairs up — this is best-effort and may leave a lone
-item slightly outside the window if it can't find a pair to merge. Never
-"fix" this by changing the target sum; sum correctness is the hard
-constraint, rank window and item count are soft.
+preserves the exact sum. Item count is soft everywhere — the loop stops early
+rather than breaking the sum if every item bottoms out at rank 1 first.
+
+The `[minRank, maxRank]` window used to be soft on both ends (best-effort,
+could leave a lone item outside it) — **the floor is now hard for
+`generateCandidateInRange`** (every board after the first; board 0 keeps the
+old best-effort behavior, see below), by explicit economist request: every
+item's value is a power of two, and a sum of values all `>= valueOf(minRank)`
+is only exactly possible when the target is itself a multiple of
+`valueOf(minRank)` — otherwise there is no exact decomposition at all, floor
+or no floor. `raiseUndersized` (`rankWindow.js`) handles this by rounding the
+target up to the nearest multiple of `valueOf(minRank)` (at most
+`valueOf(minRank) - 1` DR of overallocation, only when the exact target isn't
+already a multiple — never rounds down, so the board's blocked value never
+comes in under what was configured). `BoardEditor`'s "Sum vs. target" check
+reflects this: `sum >= target` is OK, with a note explaining the overallocation
+when it happens. The ceiling (`maxRank`) was already effectively hard
+(`splitOversized` always fully splits anything above it, no escape valve) —
+this change just brings the floor in line with it.
+
+Board 0's small-rank guarantee (`generateCandidateWithSmallRanks`, next
+paragraph) still uses the OLD best-effort `mergeUndersized` for its own
+remainder, unchanged — a stray item below `minRank` there isn't the same
+problem, since board 0 already guarantees rank 1/2/3 presence regardless. If
+this ever needs to change too, that's a separate decision — don't assume the
+non-first-board fix should silently carry over there.
 
 **Placement: distance-to-player queue, not a sorted ramp.** Items are not
 just sorted ascending onto tiles in reading order. The rule is:
@@ -250,10 +271,15 @@ board in isolation wraps it in a one-element array.
   here (not just in a code comment) since it's the kind of subtle rule a
   future change could silently break by switching to a ratchet without
   realizing one was deliberately avoided.
-- **Rank-window best-effort caveat is accepted but not "final."** The
-  economist has been told item count / rank window can drift when they
-  can't be satisfied alongside an exact sum, but hasn't signed off that this
-  is permanent behavior — flag any change here rather than assuming it's fine.
+- **Rank-window floor is now hard for non-first boards, resolving part of
+  the old "accepted but not final" caveat** (see "Item generation
+  invariant" above) — the min-rank floor overallocates sum rather than
+  drifting, by explicit economist request. Item count is still soft
+  everywhere, board 0's small-rank remainder still drifts the old way, and
+  the max-rank ceiling was already hard. If a similar complaint comes up for
+  board 0 or for item count, don't assume the same fix (overallocate)
+  applies there too without confirming — this was scoped specifically to
+  non-first boards' rank floor.
 - **Presets are only correct at the size they were captured at.** A preset
   saved from a 5×8 board applied to a 6×10 board only fills the top-left
   5×8 region, leaving the rest `"open"` — see "Board layout presets" above.
