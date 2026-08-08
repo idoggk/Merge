@@ -187,11 +187,13 @@ simulator, so these rules apply to both:
   back to the highest tier still unlocked rather than erroring.
 - **A merge reveals near where it visually happened, not near a stale
   origin.** `performMerge`'s `revealAroundMover` option is `true` for the
-  automatic simulator always, but in the play tester it's set to
-  `areAdjacent(from, to)` — a long-distance drag-merge only reveals a locked
-  tile next to the receiver, never next to wherever the dragged item
-  started, since that would look like a random unrelated event to the
-  player watching the merge happen at the receiver.
+  automatic simulator always, but the play tester always passes `false` —
+  a merge only ever reveals a locked tile next to the receiver, never next
+  to wherever the mover started, even when the two were directly adjacent.
+  Revealing next to the mover's old cell doesn't read as connected to the
+  merge the player is watching happen at the receiver, confirmed by an
+  economist report of exactly that (an adjacent one-cell merge revealing a
+  tile two rows away, above the mover's old spot).
 - **Native drag-and-drop drag images are timing-sensitive.** `handleDragStart`
   explicitly calls `setDragImage` on the tile *before* triggering any
   re-render that would restyle that same node (e.g. adding a selection

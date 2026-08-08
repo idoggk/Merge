@@ -124,10 +124,6 @@ function isMovable(state, r, c) {
   return state.itemAt[r][c] != null && !state.stuck[r][c]
 }
 
-function areAdjacent(a, b) {
-  return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) === 1
-}
-
 // What clicking `to` after selecting `from` would do - 'move' (relocate to
 // an empty cell, however far, via reachability - a piece can't be dragged
 // through occupied tiles, so this still requires a connected path of open
@@ -163,13 +159,12 @@ export function mergeItems(session, from, to) {
   const { state } = session
   const rank = state.itemAt[from[0]][from[1]]
   const recordRank = makeRecordRank(session)
-  // A long-distance (reachable-but-not-adjacent) merge doesn't reveal
-  // around the mover's original cell - see performMerge's comment. The
-  // player watched the merge happen at `to`; a tile popping open somewhere
-  // near wherever the dragged item used to sit has no visible connection
-  // to that and reads as a random, unrelated event.
-  const options = { revealAroundMover: areAdjacent(from, to) }
-  performMerge(state, { mover: from, receiver: to, rank }, recordRank, (e) => logEvent(session, e), options)
+  // Never reveal around the mover's original cell here, even when it's
+  // directly adjacent to the receiver - see performMerge's comment. The
+  // player watched the merge happen at `to`; a tile popping open next to
+  // wherever the item used to sit, rather than next to where it ended up,
+  // doesn't read as connected to the merge they were watching.
+  performMerge(state, { mover: from, receiver: to, rank }, recordRank, (e) => logEvent(session, e), { revealAroundMover: false })
   // A merge is the only action that can clear the board's last locked/stuck
   // cell (moving/spending/inventory-placing only ever add or reposition
   // free items), so this is the only place a wave needs to be checked for.

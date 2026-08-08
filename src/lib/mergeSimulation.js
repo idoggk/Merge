@@ -178,12 +178,12 @@ export function performMerge(state, merge, recordRank, log, { revealAroundMover 
   recordRank(newRank)
   // A merge "occurs" at both cells it touches — either can reveal a
   // neighboring locked tile. revealAroundMover exists for the interactive
-  // play tester specifically: when a merge is a long-distance "drag across
-  // open space" one (not directly adjacent), the mover's original cell is
-  // just wherever it happened to start, with no visible connection to the
-  // merge the player is watching happen at the receiver - revealing a tile
-  // there reads as random and disconnected. The automatic simulator always
-  // uses the default (true) and is unaffected either way.
+  // play tester specifically, which always passes false: the mover's
+  // original cell isn't where the player is watching the merge happen (the
+  // receiver is), so a tile revealing there — even when the mover was
+  // directly adjacent to the receiver — doesn't read as connected to the
+  // merge. The automatic simulator always uses the default (true) and is
+  // unaffected either way.
   if (revealAroundMover) revealNeighbors(state, merge.mover, recordRank, log)
   revealNeighbors(state, merge.receiver, recordRank, log)
 }
