@@ -1,21 +1,10 @@
 import { useState } from 'react'
-import { PlayCircle, RotateCcw, Sparkles, Star, Lock } from 'lucide-react'
+import { PlayCircle, RotateCcw, Lock } from 'lucide-react'
 import Card from './ui/Card'
 import Button from './ui/Button'
 import { colorForRank, valueOf, MAX_RANK } from '../lib/ranks'
 import { gridWidthRem } from '../lib/board'
-import {
-  createPlaySession,
-  canSpendGenerator,
-  spendGenerator,
-  canPlaceSpawn,
-  placeSpawn,
-  actionFor,
-  moveItem,
-  mergeItems,
-  activeAnchorCell,
-  compareToSimulator,
-} from '../lib/playSession'
+import { createPlaySession, canSpendGenerator, spendGenerator, actionFor, moveItem, mergeItems, compareToSimulator } from '../lib/playSession'
 
 // ring-offset punches a solid white gap between the tile and the ring, so
 // the highlight stays visible regardless of the tile's own rank color
@@ -30,7 +19,6 @@ const TARGET_STYLE = {
 export default function PlayTester({ board }) {
   const [session, setSession] = useState(() => createPlaySession(board))
   const [selected, setSelected] = useState(null)
-
   const [compared, setCompared] = useState(null)
 
   const hasSubsidyTiles = board.tiles.some((row) => row.some((s) => s === 'blocked' || s === 'semi'))
@@ -63,15 +51,7 @@ export default function PlayTester({ board }) {
   }
 
   function handleCellClick(r, c) {
-    const { state, pendingSpawn } = session
-    if (pendingSpawn) {
-      if (canPlaceSpawn(session, r, c)) {
-        placeSpawn(session, r, c)
-        setSession({ ...session })
-      }
-      return
-    }
-
+    const { state } = session
     if (selected) {
       const kind = actionFor(session, selected, [r, c])
       if (kind) {
@@ -82,11 +62,11 @@ export default function PlayTester({ board }) {
       // Clicking an invalid target, or the same cell again, just clears the
       // selection - re-select below if the new cell is itself movable.
       setSelected(null)
-      if (state.itemAt[r][c] != null && !state.subsidyOrigin[r][c]) setSelected([r, c])
+      if (state.itemAt[r][c] != null && !state.stuck[r][c]) setSelected([r, c])
       return
     }
 
-    if (state.itemAt[r][c] != null && !state.subsidyOrigin[r][c]) setSelected([r, c])
+    if (state.itemAt[r][c] != null && !state.stuck[r][c]) setSelected([r, c])
   }
 
   // Native HTML5 drag-and-drop for moving/merging - the drag source is
@@ -94,16 +74,14 @@ export default function PlayTester({ board }) {
   // any state-update timing), while `selected` mirrors it purely to drive
   // the same target-highlighting used for click-to-select.
   function handleDragStart(e, r, c) {
-    if (session.pendingSpawn) return
     const { state } = session
-    if (state.itemAt[r][c] == null || state.subsidyOrigin[r][c]) return
+    if (state.itemAt[r][c] == null || state.stuck[r][c]) return
     e.dataTransfer.setData('text/plain', `${r},${c}`)
     e.dataTransfer.effectAllowed = 'move'
     setSelected([r, c])
   }
 
   function handleDragOver(e) {
-    if (session.pendingSpawn) return
     e.preventDefault()
   }
 
@@ -116,7 +94,6 @@ export default function PlayTester({ board }) {
     applyAction(actionFor(session, [fr, fc], [r, c]), [fr, fc], [r, c])
   }
 
-  const anchorCell = activeAnchorCell(session)
   const maxRankReached = Object.keys(session.reachedAt).length
     ? Math.max(...Object.keys(session.reachedAt).map(Number))
     : 0
@@ -148,46 +125,43 @@ export default function PlayTester({ board }) {
                     row.map((rank, c) => {
                       const state = session.state
                       const locked = state.locked[r][c]
-                      const subsidy = state.subsidyOrigin[r][c]
-                      const movable = rank != null && !subsidy
+                      const stuck = state.stuck[r][c]
+                      const movable = rank != null && !stuck
                       const isSelected = selected && selected[0] === r && selected[1] === c
                       const targetKind = selected ? actionFor(session, selected, [r, c]) : null
-                      const isAnchor = anchorCell && anchorCell[0] === r && anchorCell[1] === c
-                      const placeable = session.pendingSpawn && canPlaceSpawn(session, r, c)
 
-                      // Free (open-origin, movable) items get a clean, plain
-                      // fill - nothing pinning them down. Subsidy items
-                      // (semi tiles, or blocked tiles once revealed) get a
-                      // dashed dark border plus a lock badge, so "this one's
-                      // fixed - merge into it, but it'll never move" reads
-                      // at a glance rather than needing the legend.
+                      // Free items (including a semi/blocked item that's
+                      // already been cleared) get a clean, plain fill.
+                      // Still-stuck items get a dashed dark border plus a
+                      // lock badge, so "merge into this one, but it can't
+                      // move yet" reads at a glance — the badge tracks the
+                      // item's CURRENT clear state, not its original tile
+                      // type, since a cleared item is fully free from then
+                      // on (see mergeSimulation.js's stuck comment).
                       let tileClass = 'bg-violet-50 border-2 border-dashed border-violet-200'
                       if (locked) tileClass = 'bg-indigo-950 border border-indigo-900 shadow-inner'
-                      else if (rank != null && subsidy) tileClass = 'border-[3px] border-dashed border-slate-900/60'
+                      else if (rank != null && stuck) tileClass = 'border-[3px] border-dashed border-slate-900/60'
                       else if (rank != null) tileClass = 'border border-white/50'
 
                       return (
                         <button
                           key={`${r}-${c}`}
                           type="button"
-                          draggable={movable && !session.pendingSpawn}
+                          draggable={movable}
                           onDragStart={(e) => handleDragStart(e, r, c)}
                           onDragOver={handleDragOver}
                           onDrop={(e) => handleDrop(e, r, c)}
                           onDragEnd={() => setSelected(null)}
                           onClick={() => handleCellClick(r, c)}
-                          title={rank ? `rank ${rank} (${valueOf(rank)} DR)${subsidy ? ' · fixed, merge-into only' : ''}` : locked ? 'locked' : 'open'}
+                          title={rank ? `rank ${rank} (${valueOf(rank)} DR)${stuck ? ' · stuck, merge-into only until cleared' : ''}` : locked ? 'locked' : 'open'}
                           className={`relative aspect-square rounded-lg text-white flex flex-col items-center justify-center leading-tight transition-all hover:scale-[1.05] hover:z-10 ${
                             movable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                           } ${tileClass} ${
                             isSelected ? 'ring-4 ring-offset-2 ring-offset-white ring-purple-500' : ''
-                          } ${targetKind ? TARGET_STYLE[targetKind] : ''} ${placeable ? 'ring-4 ring-offset-2 ring-offset-white ring-amber-400' : ''}`}
+                          } ${targetKind ? TARGET_STYLE[targetKind] : ''}`}
                           style={rank != null ? { backgroundColor: colorForRank(rank) } : undefined}
                         >
-                          {subsidy && rank != null && (
-                            <Lock size={11} className="absolute top-1 left-1 text-white/80" />
-                          )}
-                          {isAnchor && <Star size={12} className="absolute top-1 right-1 fill-amber-300 text-amber-300" />}
+                          {stuck && rank != null && <Lock size={11} className="absolute top-1 left-1 text-white/80" />}
                           {rank != null && (
                             <>
                               <span className="text-base font-bold">{rank}</span>
@@ -204,11 +178,7 @@ export default function PlayTester({ board }) {
               <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
                 <span className="flex items-center gap-1.5">
                   <Lock size={11} className="text-slate-500" />
-                  Fixed (blocked/semi) — merge-into only, never moves
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Star size={12} className="fill-amber-400 text-amber-400" />
-                  Active anchor — the one subsidy cell currently eligible
+                  Stuck — merge-into only until cleared, then fully free
                 </span>
                 <span className="text-slate-400">· drag (or click, then click a target) to move or merge a free item</span>
               </div>
@@ -226,17 +196,9 @@ export default function PlayTester({ board }) {
                 </div>
               </div>
 
-              <Button
-                variant="primary"
-                icon={session.pendingSpawn ? Sparkles : PlayCircle}
-                onClick={handleSpend}
-                disabled={!canSpendGenerator(session)}
-              >
-                {session.pendingSpawn ? `Place the rank 1 item` : 'Spend generator (1 DR → rank 1)'}
+              <Button variant="primary" icon={PlayCircle} onClick={handleSpend} disabled={!canSpendGenerator(session)}>
+                Spend generator (1 DR → rank 1)
               </Button>
-              {session.pendingSpawn && (
-                <p className="text-xs text-amber-600">Click an empty, unlocked cell to place it.</p>
-              )}
 
               <Button variant="secondary" onClick={() => setCompared(compareToSimulator(session))}>
                 Compare to automatic simulator at {session.drSpent} DR
@@ -275,8 +237,7 @@ export default function PlayTester({ board }) {
 function EventLine({ event }) {
   const dr = `[${event.drSpent} DR]`
   if (event.type === 'initial') return <span>{dr} starts with rank {event.rank} at {fmt(event.cell)}</span>
-  if (event.type === 'spend') return <span>{dr} spent {event.tier} DR → rank {event.rank}</span>
-  if (event.type === 'placed') return <span>{dr} placed rank {event.rank} at {fmt(event.cell)}</span>
+  if (event.type === 'spend') return <span>{dr} spent {event.tier} DR → rank {event.rank} at {fmt(event.cell)}</span>
   if (event.type === 'moved') return <span>{dr} moved {fmt(event.from)} → {fmt(event.to)}</span>
   if (event.type === 'merge') return <span>{dr} merged rank {event.rank} → rank {event.newRank} at {fmt(event.into)}</span>
   if (event.type === 'reveal') return <span>{dr} revealed rank {event.rank} at {fmt(event.cell)}</span>

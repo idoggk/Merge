@@ -1,18 +1,21 @@
-import { simulatePlaythrough, buildInitialState, inBounds, isEligibleReceiver, buildReachability, performMerge } from './mergeSimulation'
+import { simulatePlaythrough, buildInitialState, inBounds, buildReachability, performMerge, findSpawnCell } from './mergeSimulation'
 
 // An interactive counterpart to simulatePlaythrough: the same merge/reveal
-// rule primitives (buildInitialState, isEligibleReceiver, buildReachability,
-// performMerge), but every action is player-initiated rather than picked by
-// a greedy heuristic - built so the economist can manually play a board and
-// compare what they did against what the automatic simulator predicts.
+// rule primitives (buildInitialState, buildReachability, performMerge), but
+// every merge/move is player-initiated rather than picked by a greedy
+// heuristic - built so the economist can manually play a board and compare
+// what they did against what the automatic simulator predicts.
 //
-// The generator here always spawns a plain rank 1 for 1 DR - no tier gating,
-// no lucky-drop bonus. Those model the *automatic* simulator's aggregate
-// pacing; this tool exists to isolate and check merge/reveal mechanics by
-// hand, and tier/lucky-drop randomness would only obscure that.
+// The generator here always spawns a plain rank 1 for 1 DR - no tier
+// gating, no lucky-drop bonus - and drops it using the same findSpawnCell
+// placement heuristic the automatic simulator uses (the player doesn't pick
+// where it lands). Those model the *automatic* simulator's aggregate
+// pacing/placement; this tool exists to isolate and check merge/reveal
+// mechanics by hand, and tier/lucky-drop randomness or manual placement
+// would only obscure that.
 export function createPlaySession(board) {
   const state = buildInitialState(board)
-  const session = { board, state, drSpent: 0, reachedAt: {}, events: [], pendingSpawn: null }
+  const session = { board, state, drSpent: 0, reachedAt: {}, events: [] }
 
   const recordRank = makeRecordRank(session)
   for (let r = 0; r < state.rows; r++) {
@@ -40,7 +43,6 @@ function logEvent(session, event) {
 }
 
 export function canSpendGenerator(session) {
-  if (session.pendingSpawn) return false
   const { state } = session
   for (let r = 0; r < state.rows; r++) {
     for (let c = 0; c < state.cols; c++) {
@@ -50,35 +52,21 @@ export function canSpendGenerator(session) {
   return false
 }
 
-// Spends 1 DR and produces a pending rank-1 item the player must then place
-// with placeSpawn - unlike the auto-simulator's findSpawnCell heuristic, here
-// the PLAYER decides where it lands, same as dragging a piece out of a real
-// generator's dock.
+// Spends 1 DR and drops a rank-1 item using the same placement heuristic
+// the automatic simulator uses - the player doesn't choose where it lands.
 export function spendGenerator(session) {
   if (!canSpendGenerator(session)) return session
-  session.drSpent += 1
-  session.pendingSpawn = { rank: 1 }
-  logEvent(session, { type: 'spend', tier: 1, rank: 1 })
-  return session
-}
-
-export function canPlaceSpawn(session, r, c) {
   const { state } = session
-  return !!session.pendingSpawn && inBounds(state, r, c) && state.itemAt[r][c] == null && !state.locked[r][c]
-}
-
-export function placeSpawn(session, r, c) {
-  if (!canPlaceSpawn(session, r, c)) return session
-  const { rank } = session.pendingSpawn
-  session.state.itemAt[r][c] = rank
-  session.pendingSpawn = null
-  makeRecordRank(session)(rank)
-  logEvent(session, { type: 'placed', cell: [r, c], rank })
+  session.drSpent += 1
+  const cell = findSpawnCell(state, 1)
+  state.itemAt[cell[0]][cell[1]] = 1
+  logEvent(session, { type: 'spend', tier: 1, cell, rank: 1 })
+  makeRecordRank(session)(1)
   return session
 }
 
 function isMovable(state, r, c) {
-  return state.itemAt[r][c] != null && !state.subsidyOrigin[r][c]
+  return state.itemAt[r][c] != null && !state.stuck[r][c]
 }
 
 function areAdjacent(a, b) {
@@ -86,9 +74,9 @@ function areAdjacent(a, b) {
 }
 
 // What clicking `to` after selecting `from` would do - 'move' (relocate to
-// an empty, reachable cell), 'merge' (combine into a same-rank, eligible
-// receiver), or null (not legal). The UI uses this both to dispatch on
-// click and to highlight legal targets for the current selection.
+// an empty, reachable cell), 'merge' (combine into a same-rank item, stuck
+// or not), or null (not legal). The UI uses this both to dispatch on click
+// and to highlight legal targets for the current selection.
 export function actionFor(session, from, to) {
   const { state } = session
   const [fr, fc] = from
@@ -102,7 +90,6 @@ export function actionFor(session, from, to) {
     return buildReachability(state).sameComponent(fr, fc, tr, tc) ? 'move' : null
   }
   if (targetItem !== state.itemAt[fr][fc]) return null
-  if (!isEligibleReceiver(state, tr, tc)) return null
   if (areAdjacent(from, to) || buildReachability(state).sameComponent(fr, fc, tr, tc)) return 'merge'
   return null
 }
@@ -120,15 +107,6 @@ export function mergeItems(session, from, to) {
   const rank = state.itemAt[from[0]][from[1]]
   performMerge(state, { mover: from, receiver: to, rank }, makeRecordRank(session), (e) => logEvent(session, e))
   return session
-}
-
-// Cell coordinates of the board's single committed subsidy anchor (see
-// isEligibleReceiver in mergeSimulation.js), or null before any subsidy cell
-// has been merged into - lets the UI highlight which one it locked onto.
-export function activeAnchorCell(session) {
-  const { state } = session
-  if (state.activeAnchorKey === null) return null
-  return [Math.floor(state.activeAnchorKey / state.cols), state.activeAnchorKey % state.cols]
 }
 
 // Runs the automatic simulator on this session's exact board, capped at the
