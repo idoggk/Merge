@@ -200,6 +200,43 @@ simulator, so these rules apply to both:
   show a corrupted/blank drag ghost. Keep the "grab the drag image first,
   defer the state update" ordering if you touch this handler.
 
+## Board chaining (waves + inventory)
+
+The board list (sidebar) doubles as a queue: **board 0 is the one actually
+played; every board after it is a wave.** Once the active board has no
+locked or unrevealed-stuck cells left at all (`boardIsCleared`), the next
+board in the list pushes in as a strip of its own rows from the top
+(`pushBoardIn`) — its own tile pattern, `semiPlacements`, and `blockedQueue`,
+top-left column-aligned — shifting everything else down. Items shifted past
+the bottom edge go into an inventory (a plain array of ranks) instead of
+being lost; the player clicks an inventory chip then a free cell to place it
+back (`placeFromInventory`), and the automatic simulator drains its own
+inventory automatically (right after merging, before spending new DR — both
+are free actions). This cascades through consecutive boards that clear
+instantly (e.g. an all-open one) rather than stalling on the first empty one,
+and simply stops firing once the list is exhausted — no error, no wraparound.
+
+This is genuinely shared machinery, not something either consumer owns:
+`boardIsCleared`/`pushBoardIn`/`advanceBoards`/`recordAllOccupied` live in
+`mergeSimulation.js` and are called from both `playSession.js` (after every
+merge — the only action that can clear the last locked/stuck cell) and
+`simulatePlaythrough` (same trigger, plus it auto-places from inventory
+before spending DR). Keep both callers going through these shared functions
+rather than reimplementing the row-shift/overflow logic separately — they
+need to agree exactly on what counts as "cleared" and how columns align.
+
+Consequences for the Boards section above: a board's `rows` now means two
+different things depending on its position. Board 0's `rows` is its actual
+grid height. Any later board's `rows` is capped at 3 in the editor (`pushBoardIn`
+also defensively re-clamps to 3, in case older data has more) and represents
+how many rows it contributes as a wave — its `cols` should match board 0's
+for the columns to line up; a mismatch is handled the same best-effort,
+top-left-aligned way as board layout presets, not enforced.
+`simulatePlaythrough`'s signature changed accordingly: it now takes the full
+board array plus `options.startIndex`, not a single board — every internal
+caller (`onboardingGoal.js`, `placement.js`) that only wants to test one
+board in isolation wraps it in a one-element array.
+
 ## Known open items / do not silently resolve these
 
 - **Tier re-lock is resolved as dynamic (non-ratchet).** If a player's only

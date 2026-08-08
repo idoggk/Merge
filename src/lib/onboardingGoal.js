@@ -115,7 +115,7 @@ export function computeOnboardingReserve(board, { drBudget, targetRank }) {
   function attempt(value) {
     const items = decomposeReserved(value, minRank, maxRank, targetRank, maxItems)
     const { semiItems, blockedItems } = splitReserveByHost(items, semiTileCount)
-    const result = simulatePlaythrough(buildIsolatedTestBoard(board, semiItems, blockedItems), { drBudget })
+    const result = simulatePlaythrough([buildIsolatedTestBoard(board, semiItems, blockedItems)], { drBudget })
     return { ok: result.reachedAt[targetRank] !== undefined, semiItems, blockedItems, result }
   }
 

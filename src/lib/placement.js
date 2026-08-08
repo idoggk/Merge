@@ -203,7 +203,7 @@ export function placeItems(board, options = {}) {
   }
 
   const real = simulatePlaythrough(
-    { ...board, semiPlacements: result.semiPlacements, blockedQueue: result.blockedQueue },
+    [{ ...board, semiPlacements: result.semiPlacements, blockedQueue: result.blockedQueue }],
     { drBudget: onboarding.drBudget },
   )
   const drSpentToTarget = real.reachedAt[onboarding.targetRank]

@@ -24,7 +24,7 @@ import { placeItems } from '../lib/placement'
 import { MIN_RANK, MAX_RANK, colorForRank, valueOf } from '../lib/ranks'
 import { applyPresetToBoard, createPreset } from '../lib/presets'
 
-export default function BoardEditor({ board, isFirstBoard, presets, onChange, onSavePreset }) {
+export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, presets, onChange, onSavePreset }) {
   const [noise, setNoise] = useState(0.15)
   const [presetName, setPresetName] = useState('')
 
@@ -172,14 +172,16 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
             <NumberField
               label="Rows"
               min={1}
-              max={20}
+              max={isFirstBoard ? 20 : 3}
+              hint={isFirstBoard ? undefined : 'Boards after the first push in as a wave of rows once the previous board clears out — capped at 3'}
               value={board.rows}
-              onChange={(e) => handleDimensionChange(Number(e.target.value) || 1, board.cols)}
+              onChange={(e) => handleDimensionChange(Math.min(Number(e.target.value) || 1, isFirstBoard ? 20 : 3), board.cols)}
             />
             <NumberField
               label="Columns"
               min={1}
               max={20}
+              hint={isFirstBoard ? undefined : "Keep this matching Board 1's columns so the pushed-in rows line up cleanly"}
               value={board.cols}
               onChange={(e) => handleDimensionChange(board.rows, Number(e.target.value) || 1)}
             />
@@ -282,7 +284,7 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
 
         {isFirstBoard && <GoalSolver board={board} onChange={onChange} />}
 
-        <SimulationReport board={board} />
+        <SimulationReport board={board} boards={boards} boardIndex={boardIndex} />
 
         <Card
           title="Suggestions"

@@ -1,4 +1,14 @@
-import { simulatePlaythrough, buildInitialState, inBounds, buildReachability, performMerge, findSpawnCell, currentMaxRank } from './mergeSimulation'
+import {
+  simulatePlaythrough,
+  buildInitialState,
+  inBounds,
+  buildReachability,
+  performMerge,
+  findSpawnCell,
+  currentMaxRank,
+  advanceBoards,
+  recordAllOccupied,
+} from './mergeSimulation'
 import { currentTier, unlockedTiers } from './generatorTier'
 
 // An interactive counterpart to simulatePlaythrough: the same merge/reveal
@@ -17,9 +27,25 @@ import { currentTier, unlockedTiers } from './generatorTier'
 // (still the same findSpawnCell heuristic the automatic simulator uses) -
 // this tool exists to isolate and check merge/reveal mechanics by hand, and
 // lucky-drop randomness or manual placement would only obscure that.
-export function createPlaySession(board) {
-  const state = buildInitialState(board)
-  const session = { board, state, drSpent: 0, reachedAt: {}, events: [] }
+//
+// `boards` is the full board list, and play starts on `boards[startIndex]` -
+// every board after it is the wave queue: once the active board has no
+// locked/stuck cells left at all, the next board in the list pushes in as a
+// fresh strip of rows from the top (see mergeSimulation.js's pushBoardIn),
+// and anything that falls off the bottom edge lands in `session.inventory`
+// for the player to click back onto a free cell later (placeFromInventory).
+export function createPlaySession(boards, startIndex = 0) {
+  const state = buildInitialState(boards[startIndex])
+  const session = {
+    boards,
+    boardIndex: startIndex,
+    nextBoardIndex: startIndex + 1,
+    state,
+    drSpent: 0,
+    reachedAt: {},
+    events: [],
+    inventory: [],
+  }
 
   const recordRank = makeRecordRank(session)
   for (let r = 0; r < state.rows; r++) {
@@ -30,6 +56,12 @@ export function createPlaySession(board) {
       }
     }
   }
+
+  session.nextBoardIndex = advanceBoards(state, boards, session.nextBoardIndex, session.inventory, (waveBoard, rows, overflow) =>
+    logEvent(session, { type: 'board-push', name: waveBoard.name, rows, overflow }),
+  )
+  recordAllOccupied(state, recordRank)
+
   return session
 }
 
@@ -130,20 +162,49 @@ export function moveItem(session, from, to) {
 export function mergeItems(session, from, to) {
   const { state } = session
   const rank = state.itemAt[from[0]][from[1]]
+  const recordRank = makeRecordRank(session)
   // A long-distance (reachable-but-not-adjacent) merge doesn't reveal
   // around the mover's original cell - see performMerge's comment. The
   // player watched the merge happen at `to`; a tile popping open somewhere
   // near wherever the dragged item used to sit has no visible connection
   // to that and reads as a random, unrelated event.
   const options = { revealAroundMover: areAdjacent(from, to) }
-  performMerge(state, { mover: from, receiver: to, rank }, makeRecordRank(session), (e) => logEvent(session, e), options)
+  performMerge(state, { mover: from, receiver: to, rank }, recordRank, (e) => logEvent(session, e), options)
+  // A merge is the only action that can clear the board's last locked/stuck
+  // cell (moving/spending/inventory-placing only ever add or reposition
+  // free items), so this is the only place a wave needs to be checked for.
+  session.nextBoardIndex = advanceBoards(state, session.boards, session.nextBoardIndex, session.inventory, (waveBoard, rows, overflow) =>
+    logEvent(session, { type: 'board-push', name: waveBoard.name, rows, overflow }),
+  )
+  recordAllOccupied(state, recordRank)
   return session
 }
 
-// Runs the automatic simulator on this session's exact board, capped at the
-// DR the player has spent so far, so the UI can show "the simulator thinks
-// a typical playthrough would be at rank N by now" right next to what the
-// player actually achieved by hand.
+export function canPlaceFromInventory(session, index) {
+  return index >= 0 && index < session.inventory.length
+}
+
+// Places inventory item `index` onto `to` if it's a free, unlocked, empty
+// cell - the player picks the target themselves, unlike the generator's
+// findSpawnCell heuristic. No-op (session unchanged) on an invalid target,
+// same convention as actionFor's other invalid-move cases.
+export function placeFromInventory(session, index, to) {
+  const { state } = session
+  if (!canPlaceFromInventory(session, index)) return session
+  const [r, c] = to
+  if (!inBounds(state, r, c) || state.itemAt[r][c] != null || state.locked[r][c]) return session
+
+  const [rank] = session.inventory.splice(index, 1)
+  state.itemAt[r][c] = rank
+  logEvent(session, { type: 'inventory-place', cell: to, rank })
+  makeRecordRank(session)(rank)
+  return session
+}
+
+// Runs the automatic simulator on this session's exact board chain, capped
+// at the DR the player has spent so far, so the UI can show "the simulator
+// thinks a typical playthrough would be at rank N by now" right next to what
+// the player actually achieved by hand.
 export function compareToSimulator(session) {
-  return simulatePlaythrough(session.board, { drBudget: session.drSpent })
+  return simulatePlaythrough(session.boards, { startIndex: session.boardIndex, drBudget: session.drSpent })
 }

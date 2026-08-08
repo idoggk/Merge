@@ -14,7 +14,7 @@ const STOP_REASON_LABEL = {
 
 const RANKS = Array.from({ length: MAX_RANK - MIN_RANK + 1 }, (_, i) => i + MIN_RANK)
 
-export default function SimulationReport({ board }) {
+export default function SimulationReport({ board, boards, boardIndex }) {
   const [drBudgetInput, setDrBudgetInput] = useState('')
   const [result, setResult] = useState(null)
 
@@ -29,7 +29,7 @@ export default function SimulationReport({ board }) {
   function handleRun() {
     const trimmed = drBudgetInput.trim()
     const drBudget = trimmed === '' ? Infinity : Number(trimmed) || 0
-    setResult(simulatePlaythrough(board, { drBudget }))
+    setResult(simulatePlaythrough(boards, { startIndex: boardIndex, drBudget }))
   }
 
   const maxDr = result ? Math.max(1, ...Object.values(result.reachedAt)) : 0
@@ -93,6 +93,8 @@ export default function SimulationReport({ board }) {
               <AlertCircle size={14} className="mt-0.5 shrink-0" />
               <span>
                 Stopped after {result.drSpent} DR — {STOP_REASON_LABEL[result.stopReason] ?? result.stopReason}.
+                {result.inventoryRemaining > 0 &&
+                  ` ${result.inventoryRemaining} item${result.inventoryRemaining === 1 ? '' : 's'} from pushed-in boards never made it back onto the board.`}
               </span>
             </div>
           </>

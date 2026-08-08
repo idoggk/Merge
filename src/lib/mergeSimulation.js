@@ -236,28 +236,138 @@ export function currentMaxRank(state) {
   return max
 }
 
-// Simulates a player working through `board`: greedily auto-merges any
-// legal adjacent same-rank pair (deterministic tie-break via row-major scan),
-// otherwise spends DR through the generator (tier-gated dynamically on the
-// current max rank held, with deterministic EV-scheduled lucky drops) to
-// spawn a new item into an empty unlocked cell. A merge reveals any locked
-// blocked tile adjacent to either cell it touched, pulling the next item off
-// the board's blockedQueue.
+export function recordAllOccupied(state, recordRank) {
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      if (state.itemAt[r][c] != null) recordRank(state.itemAt[r][c])
+    }
+  }
+}
+
+// Whether `state` has no remaining subsidy machinery at all - no unrevealed
+// locked tile, no revealed-but-not-yet-cleared stuck item. This is the
+// trigger condition for pushing the next board in as a fresh wave of rows:
+// once true, there's nothing left on the board that isn't a fully free item.
+export function boardIsCleared(state) {
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      if (state.locked[r][c] || state.stuck[r][c]) return false
+    }
+  }
+  return true
+}
+
+// Pushes `waveBoard`'s own tile pattern + semiPlacements/blockedQueue in as
+// new rows at the top of `state`, shifting every existing row down by
+// however many rows the wave contributes (its own `rows`, capped to 3 and to
+// `state`'s own row count - a board used as a wave is meant to be a short
+// 1-3 row strip, not a full board). Column counts are aligned top-left,
+// best-effort, matching applyPresetToBoard's convention - any width mismatch
+// just leaves the uncovered columns open (wave narrower than the state) or
+// ignores the extra columns (wave wider than the state).
+//
+// Items shifted past the bottom edge are returned as a plain array of ranks
+// (order: top-to-bottom, left-to-right of the row(s) that fell off) - by the
+// time this runs the trigger condition (boardIsCleared) guarantees every
+// occupied cell on the board is a fully free item, so there's no stuck/locked
+// state to carry over for the overflowed cells, just ranks.
+export function pushBoardIn(state, waveBoard) {
+  const rows = Math.max(0, Math.min(waveBoard.rows, 3, state.rows))
+  if (rows === 0) return { rows, overflow: [] }
+
+  const cols = state.cols
+  const overflow = []
+  for (let r = state.rows - rows; r < state.rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (state.itemAt[r][c] != null) overflow.push(state.itemAt[r][c])
+    }
+  }
+
+  for (let r = state.rows - 1; r >= rows; r--) {
+    for (let c = 0; c < cols; c++) {
+      state.itemAt[r][c] = state.itemAt[r - rows][c]
+      state.stuck[r][c] = state.stuck[r - rows][c]
+      state.locked[r][c] = state.locked[r - rows][c]
+    }
+  }
+
+  const waveCols = Math.min(waveBoard.cols, cols)
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      state.itemAt[r][c] = null
+      state.stuck[r][c] = false
+      state.locked[r][c] = c < waveCols && waveBoard.tiles[r][c] === 'blocked'
+    }
+  }
+  for (const p of waveBoard.semiPlacements) {
+    if (p.row < rows && p.col < waveCols) {
+      state.itemAt[p.row][p.col] = p.rank
+      state.stuck[p.row][p.col] = true
+    }
+  }
+
+  state.blockedQueue = [...waveBoard.blockedQueue]
+  state.blockedQueueIndex = 0
+
+  return { rows, overflow }
+}
+
+// Repeatedly pushes in boards (starting at `nextBoardIndex`) while the
+// current one is fully cleared (boardIsCleared) and boards remain - a wave
+// board with no subsidy tiles/items of its own clears instantly, so this
+// cascades straight through it to the next one rather than stalling.
+// Overflowed items are appended to `inventory` (mutated in place). Calls
+// `onPush(waveBoard, rows, overflow)` for each board pushed, if given -
+// callers use this to log the event in their own shape. Returns the index of
+// the next not-yet-consumed board.
+export function advanceBoards(state, boards, nextBoardIndex, inventory, onPush) {
+  let i = nextBoardIndex
+  while (boardIsCleared(state) && i < boards.length) {
+    const waveBoard = boards[i]
+    const { rows, overflow } = pushBoardIn(state, waveBoard)
+    inventory.push(...overflow)
+    onPush?.(waveBoard, rows, overflow)
+    i += 1
+  }
+  return i
+}
+
+// Simulates a player working through `boards` (an array; play starts on
+// `boards[options.startIndex ?? 0]`): greedily auto-merges any legal pair
+// (deterministic tie-break via row-major scan), else places a free item from
+// the inventory into an empty unlocked cell if one's waiting, else spends DR
+// through the generator (tier-gated dynamically on the current max rank
+// held, with deterministic EV-scheduled lucky drops) to spawn a new item.
+// Merge and inventory-placement are both free, so they're always preferred
+// over spending new DR. A merge reveals any locked blocked tile adjacent to
+// either cell it touched, pulling the next item off the board's blockedQueue.
+//
+// Once the active board has no locked or stuck cells left at all
+// (boardIsCleared), the next board in `boards` (if any) pushes in as a fresh
+// wave of rows from the top (see pushBoardIn) — repeating through as many
+// boards as clear instantly, in order, until one doesn't or the array is
+// exhausted. Items shifted off the bottom edge go into an inventory the
+// greedy loop drains before spending any new DR.
 //
 // Returns reachedAt: { [rank]: drSpentWhenFirstReached }, sparse — ranks
 // never reached in this run are absent. `stopReason` explains why the run
 // ended: 'max-rank-reached', 'no-legal-move', 'budget-exhausted', or
 // 'max-steps' (a safety valve, not expected to trigger in practice).
+// `inventoryRemaining` is how many items were still sitting unplaced in the
+// inventory when the run stopped (only possible with 'no-legal-move' or
+// 'budget-exhausted' — the board ran out of room, or DR, before they could
+// go back on).
 //
 // options.trace: true also returns `events`, a step-by-step log (initial
-// board state, each spend/merge/reveal, each first-time-reached rank, and
-// the final stop) — off by default so normal runs don't pay for it.
-export function simulatePlaythrough(board, options = {}) {
-  const { drBudget = Infinity, targetEv = DEFAULT_TARGET_EV, maxSteps = 20000, trace = false } = options
+// board state, each spend/merge/reveal/board-push, each first-time-reached
+// rank, and the final stop) — off by default so normal runs don't pay for it.
+export function simulatePlaythrough(boards, options = {}) {
+  const { startIndex = 0, drBudget = Infinity, targetEv = DEFAULT_TARGET_EV, maxSteps = 20000, trace = false } = options
 
-  const state = buildInitialState(board)
+  const state = buildInitialState(boards[startIndex])
   const probs = computeProbs(targetEv)
   const nextBonus = createEvScheduler(probs)
+  const inventory = []
 
   const events = trace ? [] : null
   const log = trace ? (e) => events.push({ drSpent, ...e }) : null
@@ -280,6 +390,11 @@ export function simulatePlaythrough(board, options = {}) {
     }
   }
 
+  let nextBoardIndex = advanceBoards(state, boards, startIndex + 1, inventory, (waveBoard, rows, overflow) =>
+    log?.({ type: 'board-push', name: waveBoard.name, rows, overflow }),
+  )
+  recordAllOccupied(state, recordRank)
+
   let stopReason = 'max-steps'
   for (let step = 0; step < maxSteps; step++) {
     if (reachedAt[MAX_RANK] !== undefined) {
@@ -290,6 +405,19 @@ export function simulatePlaythrough(board, options = {}) {
     const merge = findLegalMerge(state)
     if (merge) {
       performMerge(state, merge, recordRank, log)
+      nextBoardIndex = advanceBoards(state, boards, nextBoardIndex, inventory, (waveBoard, rows, overflow) =>
+        log?.({ type: 'board-push', name: waveBoard.name, rows, overflow }),
+      )
+      recordAllOccupied(state, recordRank)
+      continue
+    }
+
+    const invCell = inventory.length ? findEmptyUnlockedCell(state) : null
+    if (invCell) {
+      const rank = inventory.shift()
+      state.itemAt[invCell[0]][invCell[1]] = rank
+      log?.({ type: 'inventory-place', cell: invCell, rank })
+      recordRank(rank)
       continue
     }
 
@@ -321,5 +449,6 @@ export function simulatePlaythrough(board, options = {}) {
   }
 
   log?.({ type: 'stop', reason: stopReason })
-  return trace ? { reachedAt, drSpent, stopReason, events } : { reachedAt, drSpent, stopReason }
+  const result = { reachedAt, drSpent, stopReason, inventoryRemaining: inventory.length }
+  return trace ? { ...result, events } : result
 }

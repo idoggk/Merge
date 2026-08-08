@@ -46,7 +46,10 @@ function App() {
   }
 
   function addBoard() {
-    const board = createBoard(`Board ${boards.length + 1}`)
+    // Always appended, so never board 0 - it'll be pushed in as a wave once
+    // an earlier board clears out (see CLAUDE.md's Play Tester section),
+    // and waves are capped at 3 rows.
+    const board = createBoard(`Board ${boards.length + 1}`, { rows: 3 })
     setState((s) => ({ ...s, boards: [...s.boards, board] }))
     setActiveId(board.id)
   }
@@ -142,13 +145,15 @@ function App() {
           <BoardEditor
             key={activeBoard.id}
             board={activeBoard}
+            boards={boards}
+            boardIndex={activeIndex}
             isFirstBoard={activeIndex === 0}
             presets={presets}
             onChange={updateBoard}
             onSavePreset={savePreset}
           />
         )}
-        {activeBoard && mode === 'play' && <PlayTester key={activeBoard.id} board={activeBoard} />}
+        {activeBoard && mode === 'play' && <PlayTester key={activeBoard.id} boards={boards} boardIndex={activeIndex} />}
       </main>
     </div>
   )

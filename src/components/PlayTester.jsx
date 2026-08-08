@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { PlayCircle, RotateCcw, Lock, Gamepad2, Zap, Trophy, CheckCircle2 } from 'lucide-react'
+import { PlayCircle, RotateCcw, Lock, Gamepad2, Zap, Trophy, CheckCircle2, Package, ArrowDownToLine } from 'lucide-react'
 import Card from './ui/Card'
 import Button from './ui/Button'
 import MergeCelebration from './MergeCelebration'
@@ -15,6 +15,7 @@ import {
   actionFor,
   moveItem,
   mergeItems,
+  placeFromInventory,
   compareToSimulator,
 } from '../lib/playSession'
 
@@ -28,9 +29,11 @@ const TARGET_STYLE = {
   merge: 'ring-4 ring-offset-2 ring-offset-white ring-emerald-400',
 }
 
-export default function PlayTester({ board }) {
-  const [session, setSession] = useState(() => createPlaySession(board))
+export default function PlayTester({ boards, boardIndex }) {
+  const board = boards[boardIndex]
+  const [session, setSession] = useState(() => createPlaySession(boards, boardIndex))
   const [selected, setSelected] = useState(null)
+  const [selectedInventoryIndex, setSelectedInventoryIndex] = useState(null)
   const [compared, setCompared] = useState(null)
   const [celebration, setCelebration] = useState(null)
   const [chosenTierCost, setChosenTierCost] = useState(1)
@@ -43,8 +46,9 @@ export default function PlayTester({ board }) {
   const needsGeneration = hasSubsidyTiles && board.semiPlacements.length === 0 && board.blockedQueue.length === 0
 
   function reset() {
-    setSession(createPlaySession(board))
+    setSession(createPlaySession(boards, boardIndex))
     setSelected(null)
+    setSelectedInventoryIndex(null)
     setCompared(null)
     setChosenTierCost(1)
     clearTimeout(celebrationTimeout.current)
@@ -91,6 +95,15 @@ export default function PlayTester({ board }) {
 
   function handleCellClick(r, c) {
     const { state } = session
+    if (selectedInventoryIndex != null) {
+      if (state.itemAt[r][c] == null && !state.locked[r][c]) {
+        placeFromInventory(session, selectedInventoryIndex, [r, c])
+        setSession({ ...session })
+      }
+      setSelectedInventoryIndex(null)
+      return
+    }
+
     if (selected) {
       const kind = actionFor(session, selected, [r, c])
       if (kind) {
@@ -106,6 +119,14 @@ export default function PlayTester({ board }) {
     }
 
     if (state.itemAt[r][c] != null && !state.stuck[r][c]) setSelected([r, c])
+  }
+
+  // Selecting an inventory chip is mutually exclusive with selecting a board
+  // cell - clicking one clears the other, same as re-selecting a different
+  // board cell already clears the previous selection.
+  function handleInventoryClick(i) {
+    setSelected(null)
+    setSelectedInventoryIndex((current) => (current === i ? null : i))
   }
 
   // Native HTML5 drag-and-drop for moving/merging - the drag source is
@@ -148,6 +169,8 @@ export default function PlayTester({ board }) {
   const unlockedTiers = unlockedGeneratorTiers(session)
   const activeTier = unlockedTiers.find((t) => t.cost === chosenTierCost) ?? unlockedTiers[unlockedTiers.length - 1]
 
+  const nextBoard = session.nextBoardIndex < session.boards.length ? session.boards[session.nextBoardIndex] : null
+
   const cols = board.cols
   const widthRem = gridWidthRem(cols)
 
@@ -179,7 +202,14 @@ export default function PlayTester({ board }) {
                       const stuck = state.stuck[r][c]
                       const movable = rank != null && !stuck
                       const isSelected = selected && selected[0] === r && selected[1] === c
-                      const targetKind = selected ? actionFor(session, selected, [r, c]) : null
+                      const targetKind =
+                        selectedInventoryIndex != null
+                          ? rank == null && !locked
+                            ? 'move'
+                            : null
+                          : selected
+                            ? actionFor(session, selected, [r, c])
+                            : null
 
                       // Free items (including a semi/blocked item that's
                       // already been cleared) get a clean, plain fill.
@@ -235,6 +265,49 @@ export default function PlayTester({ board }) {
                   Stuck — merge-into only until cleared, then fully free
                 </span>
                 <span className="text-slate-400">· drag (or click, then click a target) to move or merge a free item</span>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <ArrowDownToLine size={12} className="text-slate-400 shrink-0" />
+                {nextBoard ? (
+                  <span>
+                    Next wave: <span className="font-medium text-slate-700">{nextBoard.name}</span> pushes in (
+                    {Math.min(nextBoard.rows, 3)} row{Math.min(nextBoard.rows, 3) === 1 ? '' : 's'}) once this board's
+                    blocked/semi tiles fully clear.
+                  </span>
+                ) : (
+                  <span>No more boards queued — this board won't get any new waves.</span>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-2.5">
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 px-1">
+                  <Package size={12} strokeWidth={2.5} /> Inventory
+                </span>
+                {session.inventory.length === 0 ? (
+                  <p className="text-xs text-slate-400 px-1">
+                    Empty — items pushed off the bottom when a new board comes in land here, ready to place back on
+                    a free cell.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 px-1">
+                    {session.inventory.map((rank, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleInventoryClick(i)}
+                        title={`rank ${rank} (${valueOf(rank)} DR) — click, then click a free cell to place it`}
+                        className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center text-white text-xs font-bold leading-none shadow-[inset_0_2px_0_rgba(255,255,255,0.35)] transition-transform ${
+                          selectedInventoryIndex === i ? 'ring-4 ring-offset-2 ring-offset-white ring-purple-500' : 'hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: colorForRank(rank) }}
+                      >
+                        {rank}
+                        <span className="text-[8px] font-semibold opacity-85">{valueOf(rank)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -339,6 +412,14 @@ function EventLine({ event }) {
   if (event.type === 'moved') return <span>{dr} moved {fmt(event.from)} → {fmt(event.to)}</span>
   if (event.type === 'merge') return <span>{dr} merged rank {event.rank} → rank {event.newRank} at {fmt(event.into)}</span>
   if (event.type === 'reveal') return <span>{dr} revealed rank {event.rank} at {fmt(event.cell)}</span>
+  if (event.type === 'inventory-place') return <span>{dr} placed rank {event.rank} from inventory at {fmt(event.cell)}</span>
+  if (event.type === 'board-push')
+    return (
+      <span className="font-medium text-slate-700">
+        {dr} {event.name} pushed in ({event.rows} row{event.rows === 1 ? '' : 's'})
+        {event.overflow.length > 0 && ` — ${event.overflow.length} item${event.overflow.length === 1 ? '' : 's'} sent to inventory`}
+      </span>
+    )
   if (event.type === 'reached')
     return (
       <span className={event.rank === MAX_RANK ? 'font-semibold text-amber-600' : 'font-medium text-slate-700'}>
