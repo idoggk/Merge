@@ -90,7 +90,7 @@ export function actionFor(session, from, to) {
     return buildReachability(state).sameComponent(fr, fc, tr, tc) ? 'move' : null
   }
   if (targetItem !== state.itemAt[fr][fc]) return null
-  if (areAdjacent(from, to) || buildReachability(state).sameComponent(fr, fc, tr, tc)) return 'merge'
+  if (areAdjacent(from, to)) return 'merge'
   return null
 }
 
