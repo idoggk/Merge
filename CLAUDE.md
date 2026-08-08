@@ -6,9 +6,21 @@ with the game economist across a long conversation; this file exists so a
 Claude Code agent picking up the codebase understands the domain rules well
 enough not to silently break them while adding features.
 
-The current implementation is a single-file React artifact
-(`merge_mania_toolkit.jsx`). It is expected to be split into a proper project
-structure here — that split should preserve every invariant below.
+The project started as a single-file React artifact (`merge_mania_toolkit.jsx`)
+and has since been split into a proper Vite + React project under `src/`
+(`components/`, `lib/`) — that split is done; preserve every invariant below
+when extending it further.
+
+**Implementation status.** Not every domain-model concept below is built yet.
+Board layout, item generation/placement, the playthrough simulator, and the
+interactive play tester (`src/components/PlayTester.jsx`) are implemented.
+**Segments** and **Push/stall pacing** are design intent only — there is no
+`segment` field, no per-segment budget, and no pacing-gap/push/stall code
+anywhere in `src/`. The app currently edits and simulates one flat list of
+boards, full stop. Don't assume a segments layer exists when reading the
+code, and don't bolt one on speculatively — ask first, since that's a
+substantial architecture change (segment-scoped board lists, segment-scoped
+subsidy totals, etc.), not an incremental addition.
 
 ## Domain model (do not casually change these)
 
@@ -28,6 +40,15 @@ lucky-drop odds/EV. This was an explicit design decision — the team rejected
 "stronger players get less DR per action" as a lever; all segment difficulty
 lives in how much of the rank-12 climb is subsidized by the board vs. earned
 by active play.
+
+*Not implemented in code yet* (see "Implementation status" above) — today
+the app manages a single flat `boards` list with no segment wrapper, and
+there's no per-segment `budget` field. Earlier design math computed that
+7-day generator DR budget as roughly 140% of `(2048 - subsidy)`, but that
+relationship isn't encoded anywhere; if/when a segment layer gets built,
+don't silently wire that formula in as automatic — confirm with the
+economist first, since they may want it manually overridable per segment
+the same way board `blockedValue` is manually overridable per board today.
 
 **Boards.** Each segment has its own ordered list of boards (not shared
 globally). Each board has:
@@ -76,20 +97,34 @@ bigger, but it's not a rigid staircase. Preserve this two-step
 (distance-order, then noisy-queue) structure — don't collapse it back into a
 single sort.
 
-**Board layout presets are literal, not generative.** `BOARD_PRESETS`
-("Suggestion 1"–"Suggestion 5") are hardcoded 5×8 grids the economist
-hand-designed and approved — they are not formulas. Do not replace them with
-procedural generation without being asked. If a preset is applied to a board
-whose size isn't 5×8, cells outside the original grid default to `"open"`
-(no pattern extension) — this is a known limitation, not a bug to silently
-"fix" by inventing new pattern math.
+**Board layout presets are literal, not generative, and economist-authored.**
+There are no shipped/hardcoded presets — `presets.js`'s `createPreset` just
+snapshots whatever tile pattern the economist is currently looking at in the
+editor (via the "Suggestions" card's Save button), at whatever size that
+board happens to be. `applyPresetToBoard` then stamps that literal grid onto
+another board, top-left aligned; cells outside the preset's original
+`rows × cols` default to `"open"` rather than extending the pattern — this is
+a known limitation (presets don't scale to a board bigger than the one they
+were captured on), not a bug to silently "fix" by inventing pattern-extension
+math. Do not replace this literal-stamp behavior with procedural generation
+without being asked — the whole point is that it's a faithful copy of a
+layout the economist hand-approved.
 
 **Multiplier tiers (generator).** x1 costs 1 DR / normally drops rank 1. x2
 costs 2 DR / rank 2, unlocks once the player's cumulative effort reaches
 rank 7. x4 costs 4 DR / rank 3, unlocks at rank 10. These thresholds
-(`tierForRank`) are pinned to absolute chain rank, not DR amount, so they
-fire at the same *rank* for every segment even though segments need
-different total DR to reach that rank.
+(`generatorTier.js`'s `GENERATOR_TIERS`/`TIER2_UNLOCK_RANK`/
+`TIER4_UNLOCK_RANK`) are pinned to absolute chain rank, not DR amount, so
+they fire at the same *rank* for every segment even though segments need
+different total DR to reach that rank. The unlock check is dynamic, keyed
+off the player's *current* max rank **held** (`currentMaxRank`), not a
+ratchet on the best rank ever reached — see "Tier re-lock is resolved as
+dynamic" below. The automatic simulator (`simulatePlaythrough`) always
+greedily spends at the highest unlocked tier via `currentTier`; the
+interactive play tester lets the player pick *any* currently-unlocked tier
+via `unlockedGeneratorTiers` (see "Play Tester" below) — those are
+deliberately different behaviors for the same underlying thresholds, not a
+bug to reconcile.
 
 **Lucky drops.** One shared expected-value multiple (`targetEv`, e.g. 1.05x)
 applies uniformly across all three tiers and all four segments. The
@@ -105,46 +140,120 @@ the 2048 chain, back-loaded so segments land around rank 11 — "FU," verge of
 completion — roughly 2 days before the event ends). Players behind the curve
 get a "push" DR-per-click factor (>1x) plus access to live blocked-tile
 swaps and repeatable guaranteed lucky drops; players too far ahead get a
-"stall" factor (<1x). The pacing simulator in the current build uses
-expected-value math, not Monte Carlo — there's an open request to add
-variance/spread modeling here.
+"stall" factor (<1x).
+
+*Not implemented in code yet* (see "Implementation status" above) — there is
+no pacing simulator, no push/stall factor, and no day-N curve anywhere in
+`src/`. This whole section is design intent for future work, not a
+description of `simulatePlaythrough` (which just runs a board to a DR budget
+or max rank with no notion of "days" or a target curve at all). When this
+does get built, it'll need real variance/spread modeling (Monte Carlo or
+equivalent) from the start — the existing `simulatePlaythrough` and lucky
+drop's `createEvScheduler` are both deliberately deterministic
+expected-value machinery (see "Lucky drops" above), which is fine for what
+they do but is not a substitute for player-to-player variance once pacing
+gates start branching on "ahead of curve" vs "behind."
+
+## Play Tester
+
+`src/components/PlayTester.jsx` + `src/lib/playSession.js` let the economist
+manually play a generated board — click/drag to move or merge, spend the
+generator — as a ground-truth check against `simulatePlaythrough`'s
+automatic result. It shares `mergeSimulation.js`'s core primitives
+(`buildInitialState`, `buildReachability`, `performMerge`) with the automatic
+simulator, so these rules apply to both:
+
+- **Merge legality is fully position-agnostic**, by explicit economist
+  decision: two same-rank items merge regardless of where they sit on the
+  board — adjacent, far apart, or one fully boxed in with no empty-cell path
+  to it. Don't reintroduce an adjacency or reachability requirement for
+  merging; `buildReachability`'s connected-open-space graph is still used,
+  but only for the separate "can this item *move* to that empty cell" check.
+- **The `stuck` flag is what actually prevents free cascades**, not
+  position. A semi tile's item starts `stuck`; a blocked tile's item becomes
+  `stuck` the instant it's revealed. A `stuck` item can be merged *into* but
+  can never be the mover, so two still-`stuck` items can never merge with
+  each other on their own — some player-driven mover (something the
+  generator placed, or a chain of merges rooted in one) has to reach it
+  first. Once merged into, it clears (`stuck` → `false`) and is a fully
+  normal item from then on — this is the "revealed but needs one more merge
+  to fully clear" rule from the Boards section above, and it's the same for
+  a semi-origin or blocked-origin item.
+- **The generator lets the player pick any currently-unlocked tier**
+  (`unlockedGeneratorTiers`), defaulting to x1 even after x2/x4 unlock — it
+  does not auto-force the highest tier the way the automatic simulator's
+  greedy `currentTier` does. If the player's chosen tier re-locks (their
+  qualifying rank-7/rank-10 item gets merged away), spending silently falls
+  back to the highest tier still unlocked rather than erroring.
+- **A merge reveals near where it visually happened, not near a stale
+  origin.** `performMerge`'s `revealAroundMover` option is `true` for the
+  automatic simulator always, but in the play tester it's set to
+  `areAdjacent(from, to)` — a long-distance drag-merge only reveals a locked
+  tile next to the receiver, never next to wherever the dragged item
+  started, since that would look like a random unrelated event to the
+  player watching the merge happen at the receiver.
+- **Native drag-and-drop drag images are timing-sensitive.** `handleDragStart`
+  explicitly calls `setDragImage` on the tile *before* triggering any
+  re-render that would restyle that same node (e.g. adding a selection
+  ring) — if a future change re-renders the dragged node synchronously
+  inside `onDragStart` before `setDragImage` runs, Chromium can intermittently
+  show a corrupted/blank drag ghost. Keep the "grab the drag image first,
+  defer the state update" ordering if you touch this handler.
 
 ## Known open items / do not silently resolve these
 
-- **Tier re-lock semantics are undefined.** If a player's only rank-7+ item
-  gets merged away, does x2 re-lock? Not yet decided — ask before assuming
-  either answer.
-- **Pacing simulator needs a Monte Carlo rework.** Current version is
-  expected-value only; economist has asked for player-to-player variance
-  modeling but it hasn't been built yet.
+- **Tier re-lock is resolved as dynamic (non-ratchet).** If a player's only
+  rank-7+ item gets merged away, x2 re-locks — `generatorTier.js`'s
+  `currentTier`/`unlockedTiers` are keyed off the player's *current* max
+  rank held, re-evaluated every time, not the best rank ever reached. This
+  was an open question in earlier design discussion; it's now the shipped
+  behavior in both the automatic simulator and the play tester. Flag it
+  here (not just in a code comment) since it's the kind of subtle rule a
+  future change could silently break by switching to a ratchet without
+  realizing one was deliberately avoided.
 - **Rank-window best-effort caveat is accepted but not "final."** The
   economist has been told item count / rank window can drift when they
   can't be satisfied alongside an exact sum, but hasn't signed off that this
   is permanent behavior — flag any change here rather than assuming it's fine.
-- **Segment `budget` (7-day generator DR budget) is a free-standing number**,
-  not derived automatically from `subsidy`. Earlier design math computed it
-  as roughly 140% of `(2048 - subsidy)`, but the app does not enforce or
-  recompute that relationship — it's manually editable. Don't silently wire
-  an automatic formula back in without checking; the economist may be
-  intentionally overriding it during iteration.
-- **Presets don't scale to arbitrary board sizes.** Only correct at the 5×8
-  size they were authored at.
+- **Presets are only correct at the size they were captured at.** A preset
+  saved from a 5×8 board applied to a 6×10 board only fills the top-left
+  5×8 region, leaving the rest `"open"` — see "Board layout presets" above.
 
 ## Persistence
 
-The artifact version uses `window.storage` (personal, not shared) under key
-`merge-mania-segments-and-boards`, storing `{ segments, boardsBySeg }` as
-JSON. If this becomes a real app with its own backend, preserve this shape
-as the migration source, and keep save explicit (a button) rather than
-continuous autosave, matching current UX.
+`src/lib/persistence.js` uses real browser `localStorage` (personal, not
+shared) under key `merge-mania-board-simulator`, storing `{ boards, presets }`
+as JSON — note there's no `segments`/`boardsBySeg` shape yet since segments
+aren't implemented (see "Implementation status" above); if a segments layer
+gets built later, this is the shape that'll need to grow to accommodate it.
+Save stays an explicit action (the header's Save button, `App.jsx`'s
+`handleSave`) rather than continuous autosave — preserve that if this grows
+a real backend.
 
 ## Style/stack notes
 
-- React functional components, hooks-based, Tailwind utility classes only
-  (no custom CSS files in the current version).
+- React functional components, hooks-based, Tailwind v4 (`@tailwindcss/vite`
+  plugin, no `tailwind.config.js` — theme tokens live in `src/index.css`'s
+  `@theme` block).
+- `src/index.css` is not just a Tailwind entrypoint: it also defines the
+  `--font-sans`/`--font-display` theme tokens, the `.app-backdrop` gradient
+  background used by `App.jsx`, and the `@keyframes merge-particle` the merge
+  celebration uses. It's small and deliberate, not a place utility classes
+  accidentally leaked into — keep new global/animation CSS there rather than
+  reaching for inline `<style>` blocks or a second CSS file.
+- Visual identity: Baloo 2 (`font-display`, loaded via Google Fonts link tags
+  in `index.html`) for headings/big numbers, Inter (`font-sans`) for
+  everything else; a soft purple/fuchsia "aurora" gradient backdrop
+  (`.app-backdrop`); gradient purple→fuchsia for primary actions and active
+  nav/tier-selection states; icon badges on card headers. Reuse these rather
+  than introducing a second visual language for new UI.
 - Charts via `recharts`. Icons via `lucide-react`.
-- Color ramp for rank display (`RAMP` / `colorForRank`) goes light→dark
-  purple as rank increases 1–12; reuse this convention for any new rank
-  visualization rather than inventing a second palette.
-- No backend, no database, no auth in the current version — pure
-  client-side state plus the artifact storage API for persistence.
+- Color ramp for rank display (`RAMP` / `colorForRank` in `src/lib/ranks.js`)
+  is a rarity-style gradient — emerald→teal→cyan→sky→blue→indigo→violet→
+  purple→fuchsia→pink→rose→gold as rank increases 1–12 — **not** the
+  single-hue light→dark purple ramp originally specified; that read as flat
+  and washed-out and was changed on explicit request. Reuse this convention
+  (and this exact ramp) for any new rank visualization rather than reverting
+  to single-hue purple or inventing a second palette.
+- No backend, no database, no auth — pure client-side state plus
+  `localStorage` for persistence.
