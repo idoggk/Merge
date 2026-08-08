@@ -74,12 +74,13 @@ function areAdjacent(a, b) {
 }
 
 // What clicking `to` after selecting `from` would do - 'move' (relocate to
-// an empty cell, however far, via reachability) or 'merge' (combine into a
-// same-rank item, stuck or not, either directly adjacent or reachable
-// across connected open space - same "drag a piece across the board to
-// reach a match" rule the automatic simulator uses), or null (not legal).
-// The UI uses this both to dispatch on click and to highlight legal targets
-// for the current selection.
+// an empty cell, however far, via reachability - a piece can't be dragged
+// through occupied tiles, so this still requires a connected path of open
+// space) or 'merge' (combine into a same-rank item, stuck or not, anywhere
+// on the board - position isn't a legality constraint for merging, matching
+// the automatic simulator), or null (not legal). The UI uses this both to
+// dispatch on click and to highlight legal targets for the current
+// selection.
 export function actionFor(session, from, to) {
   const { state } = session
   const [fr, fc] = from
@@ -92,8 +93,7 @@ export function actionFor(session, from, to) {
   if (targetItem == null) {
     return buildReachability(state).sameComponent(fr, fc, tr, tc) ? 'move' : null
   }
-  if (targetItem !== state.itemAt[fr][fc]) return null
-  return areAdjacent(from, to) || buildReachability(state).sameComponent(fr, fc, tr, tc) ? 'merge' : null
+  return targetItem === state.itemAt[fr][fc] ? 'merge' : null
 }
 
 export function moveItem(session, from, to) {

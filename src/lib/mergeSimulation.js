@@ -47,42 +47,6 @@ export function inBounds(state, r, c) {
   return r >= 0 && r < state.rows && c >= 0 && c < state.cols
 }
 
-// Fast path: two same-rank items sitting directly next to each other.
-// Deterministic scan, row-major, checking neighbors up/down/left/right in
-// that order — same pair of cells always resolves the same way.
-//
-// Two passes: open-open pairs (neither side stuck) first, stuck-involving
-// pairs only if no open-open pair exists anywhere on the board right now.
-// This isn't required for correctness (a stuck item can be legally cleared
-// any time a matching mover reaches it) but keeps freshly-built items
-// flexible for as long as possible rather than committing them to whichever
-// stuck tile happens to be nearest.
-function findDirectAdjacentMerge(state) {
-  return scanDirectAdjacent(state, true) ?? scanDirectAdjacent(state, false)
-}
-
-function scanDirectAdjacent(state, requireBothFree) {
-  for (let r = 0; r < state.rows; r++) {
-    for (let c = 0; c < state.cols; c++) {
-      const rank = state.itemAt[r][c]
-      if (rank == null) continue
-      for (const [dr, dc] of DELTAS) {
-        const nr = r + dr
-        const nc = c + dc
-        if (!inBounds(state, nr, nc) || state.itemAt[nr][nc] !== rank) continue
-
-        const hereMovable = !state.stuck[r][c]
-        const thereMovable = !state.stuck[nr][nc]
-        if (requireBothFree && !(hereMovable && thereMovable)) continue
-        if (hereMovable) return { mover: [r, c], receiver: [nr, nc], rank }
-        if (thereMovable) return { mover: [nr, nc], receiver: [r, c], rank }
-        // Neither side can vacate (both still-stuck subsidy items) — not legal.
-      }
-    }
-  }
-  return null
-}
-
 // Union-find over cells: empty-empty and occupied-empty pairs connect;
 // locked/unrevealed tiles are obstacles (never unioned) since a piece can't
 // be dragged through them. Occupied-occupied pairs are deliberately NOT
@@ -133,53 +97,51 @@ export function buildReachability(state) {
   return { find: (r, c) => find(idx(r, c)), sameComponent: (r1, c1, r2, c2) => find(idx(r1, c1)) === find(idx(r2, c2)) }
 }
 
-// Slow path: same-rank items connected via shared open space, not just
-// directly adjacent (see buildReachability).
-function findReachableMerge(state) {
-  const { rows, cols } = state
-  const reach = buildReachability(state)
+// Two same-rank items merge regardless of where they sit on the board - a
+// player can always bring one to the other eventually, so position isn't a
+// legality constraint (buildReachability's connected-open-space graph is
+// still used separately for the interactive play tester's "move to an
+// empty cell" check, just not for merge legality).
+//
+// Two passes: an open-open pair (neither side stuck) anywhere on the board
+// first, a stuck-involving pair only if no open-open pair exists at all.
+// This isn't required for correctness (a stuck item can be legally cleared
+// any time a matching mover reaches it) but keeps freshly-built items
+// flexible for as long as possible rather than committing them to whichever
+// stuck item is found first.
+function findLegalMerge(state) {
+  return scanForMerge(state, true) ?? scanForMerge(state, false)
+}
 
-  // Group occupied cells by (connected component, rank), in row-major scan
-  // order, so the result is deterministic.
-  const byRoot = new Map()
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
+function scanForMerge(state, requireBothFree) {
+  // Group all occupied cells by rank, row-major scan order, so the result
+  // is deterministic.
+  const byRank = new Map()
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
       const rank = state.itemAt[r][c]
       if (rank == null) continue
-      const root = reach.find(r, c)
-      if (!byRoot.has(root)) byRoot.set(root, new Map())
-      const byRank = byRoot.get(root)
       if (!byRank.has(rank)) byRank.set(rank, [])
       byRank.get(rank).push([r, c])
     }
   }
 
-  // Same two-pass open-first priority as the direct-adjacent path (see its
-  // comment).
-  for (const requireBothFree of [true, false]) {
-    for (const byRank of byRoot.values()) {
-      for (const cells of byRank.values()) {
-        if (cells.length < 2) continue
-        for (let i = 0; i < cells.length; i++) {
-          for (let j = i + 1; j < cells.length; j++) {
-            const [ar, ac] = cells[i]
-            const [br, bc] = cells[j]
-            const rank = state.itemAt[ar][ac]
-            const hereMovable = !state.stuck[ar][ac]
-            const thereMovable = !state.stuck[br][bc]
-            if (requireBothFree && !(hereMovable && thereMovable)) continue
-            if (hereMovable) return { mover: [ar, ac], receiver: [br, bc], rank }
-            if (thereMovable) return { mover: [br, bc], receiver: [ar, ac], rank }
-          }
-        }
+  for (const cells of byRank.values()) {
+    if (cells.length < 2) continue
+    for (let i = 0; i < cells.length; i++) {
+      for (let j = i + 1; j < cells.length; j++) {
+        const [ar, ac] = cells[i]
+        const [br, bc] = cells[j]
+        const rank = state.itemAt[ar][ac]
+        const hereMovable = !state.stuck[ar][ac]
+        const thereMovable = !state.stuck[br][bc]
+        if (requireBothFree && !(hereMovable && thereMovable)) continue
+        if (hereMovable) return { mover: [ar, ac], receiver: [br, bc], rank }
+        if (thereMovable) return { mover: [br, bc], receiver: [ar, ac], rank }
       }
     }
   }
   return null
-}
-
-function findLegalMerge(state) {
-  return findDirectAdjacentMerge(state) ?? findReachableMerge(state)
 }
 
 export function revealNeighbors(state, [r, c], recordRank, log) {
@@ -235,16 +197,15 @@ function findEmptyUnlockedCell(state) {
   return null
 }
 
-// Prefer an empty cell adjacent to an existing item of the rank about to be
-// spawned, so the spawn sets up an immediate merge. Always filling the first
-// empty cell in scan order (regardless of rank) can converge into a
-// checkerboard of alternating ranks where no two equal ranks are ever
-// adjacent — a real player would place to merge, not spread out.
+// Prefer an empty cell adjacent to an existing item of the same rank, purely
+// so the spend looks intentional (landing next to a matching item) rather
+// than scattered - findLegalMerge doesn't care where anything sits, so this
+// has no effect on which merge happens next, only on where the new item
+// visually appears.
 //
-// Two tiers: a not-stuck same-rank neighbor first (always legal to merge
-// into immediately), then a still-stuck one (legal too — the spawn itself
-// is the mover — just deprioritized so fresh items consolidate with each
-// other before committing a stuck tile's clearing to whichever is nearest).
+// Two tiers: a not-stuck same-rank neighbor first, then a still-stuck one -
+// same cosmetic-only reasoning, preferring to look like it's building
+// toward an open item before showing up next to a fixed one.
 export function findSpawnCell(state, rank) {
   return findSpawnCellNear(state, rank, true) ?? findSpawnCellNear(state, rank, false) ?? findEmptyUnlockedCell(state)
 }
