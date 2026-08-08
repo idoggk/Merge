@@ -283,6 +283,13 @@ board in isolation wraps it in a one-element array.
 - **Presets are only correct at the size they were captured at.** A preset
   saved from a 5×8 board applied to a 6×10 board only fills the top-left
   5×8 region, leaving the rest `"open"` — see "Board layout presets" above.
+- **`src/lib/boardSyntax.js` is an explicitly placeholder Ops export
+  format**, not a design decision — the economist hasn't gotten the real
+  syntax spec from Ops yet. It's deliberately isolated (one file, two pure
+  functions, nothing else in the app reads its output) so it can be replaced
+  wholesale the moment the real spec exists. Don't treat its current
+  shape (tile-map ASCII, `(row,col)=Rrank` semi list, comma-separated
+  blocked queue) as meaningful or worth preserving — it's a stand-in.
 
 ## Persistence
 
