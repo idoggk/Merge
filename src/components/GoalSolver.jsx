@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Target, CheckCircle2, AlertTriangle } from 'lucide-react'
 import Card from './ui/Card'
 import NumberField from './ui/NumberField'
 import { MIN_RANK, MAX_RANK } from '../lib/ranks'
@@ -27,6 +27,7 @@ export default function GoalSolver({ board, onChange }) {
     <Card
       title="Onboarding goal"
       subtitle="Board 1 only — reserves the first part of this board's items so a player reaches a target rank within a DR grant"
+      icon={Target}
       className="flex-1 min-w-64"
     >
       <div className="flex flex-col gap-4">
@@ -51,8 +52,10 @@ export default function GoalSolver({ board, onChange }) {
         )}
 
         {status?.feasible && (
-          <div className="flex items-start gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-            <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+          <div className="flex items-start gap-2.5 text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+            <span className="mt-0.5 shrink-0 grid place-items-center w-5 h-5 rounded-full bg-emerald-500 text-white">
+              <CheckCircle2 size={13} strokeWidth={2.5} />
+            </span>
             <span>
               Reserved {status.reservedValue} DR up front (out of this board's total blocked value) — reaches rank{' '}
               {board.onboardingTargetRank} using {status.drSpentToTarget} of the {board.onboardingDrBudget} DR grant.
@@ -62,8 +65,10 @@ export default function GoalSolver({ board, onChange }) {
         )}
 
         {status && !status.feasible && (
-          <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <div className="flex items-start gap-2.5 text-sm text-red-800 bg-red-50 border border-red-200 rounded-xl p-3">
+            <span className="mt-0.5 shrink-0 grid place-items-center w-5 h-5 rounded-full bg-red-500 text-white">
+              <AlertTriangle size={13} strokeWidth={2.5} />
+            </span>
             <span>{INFEASIBLE_MESSAGE[status.reason]?.(status) ?? 'This goal could not be satisfied.'}</span>
           </div>
         )}

@@ -1,5 +1,17 @@
 import { useMemo, useState } from 'react'
-import { Wand2, BookmarkPlus, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  Wand2,
+  BookmarkPlus,
+  CheckCircle2,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Grid2x2,
+  Rows3,
+  Coins,
+  ListOrdered,
+  Layers,
+} from 'lucide-react'
 import BoardGrid from './BoardGrid'
 import SimulationReport from './SimulationReport'
 import GoalSolver from './GoalSolver'
@@ -106,20 +118,21 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
         <Card
           title={board.name}
           subtitle={`${blockedTileCount} blocked/semi tile${blockedTileCount === 1 ? '' : 's'} to fill`}
+          icon={Grid2x2}
           className="shrink-0"
         >
           <BoardGrid tiles={board.tiles} placements={board.semiPlacements} onPaint={handlePaint} onFillAll={handleFillAll} />
         </Card>
 
-        <Card title="Blocked queue" subtitle="Reveal order for blocked tiles — reorder to control pacing">
+        <Card title="Blocked queue" subtitle="Reveal order for blocked tiles — reorder to control pacing" icon={ListOrdered}>
           {board.blockedQueue.length === 0 ? (
             <p className="text-sm text-slate-400">Generate items to populate the queue.</p>
           ) : (
             <div className="flex flex-wrap gap-2" style={{ maxWidth: `${gridWidthRem(board.cols)}rem` }}>
               {board.blockedQueue.map((rank, i) => (
-                <div key={i} className="flex flex-col items-center gap-1 border border-slate-200 rounded-lg p-1.5 w-16">
+                <div key={i} className="flex flex-col items-center gap-1 border border-slate-200 rounded-xl p-1.5 w-16 bg-slate-50/60 hover:border-purple-200 transition-colors">
                   <span
-                    className="w-9 h-9 rounded-md flex flex-col items-center justify-center text-white text-xs font-bold leading-none"
+                    className="w-9 h-9 rounded-lg flex flex-col items-center justify-center text-white text-xs font-bold leading-none shadow-[inset_0_2px_0_rgba(255,255,255,0.35)]"
                     style={{ backgroundColor: colorForRank(rank) }}
                   >
                     {rank}
@@ -154,7 +167,7 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
       </div>
 
       <div className="flex flex-wrap gap-6 flex-1 min-w-72">
-        <Card title="Board size" className="flex-1 min-w-64">
+        <Card title="Board size" icon={Rows3} className="flex-1 min-w-64">
           <div className="grid grid-cols-2 gap-4">
             <NumberField
               label="Rows"
@@ -176,6 +189,7 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
         <Card
           title="Subsidy & rank window"
           subtitle="Blocked-tile value and the allowed item rank range"
+          icon={Coins}
           className="flex-1 min-w-64"
         >
           <div className="grid grid-cols-2 gap-4">
@@ -210,6 +224,7 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
         <Card
           title="Placement"
           subtitle="Generate items and place them by distance-to-player"
+          icon={Wand2}
           className="flex-1 min-w-64"
         >
           <div className="flex flex-col gap-4">
@@ -228,7 +243,7 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
             </Button>
 
             {stats.hasLayout && (
-              <div className="flex flex-col gap-2 text-sm bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <div className="flex flex-col gap-2 text-sm bg-slate-50/80 border border-slate-200 rounded-xl p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Sum vs. target</span>
                   <span className={`flex items-center gap-1 font-medium ${sumOk ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -272,6 +287,7 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
         <Card
           title="Suggestions"
           subtitle="Save a layout you like, apply it elsewhere"
+          icon={Layers}
           className="flex-1 min-w-64"
         >
           <div className="flex flex-col gap-3">
@@ -284,9 +300,9 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
                     key={preset.id}
                     type="button"
                     onClick={() => handleApplyPreset(preset)}
-                    className="text-left text-sm border border-slate-200 rounded-lg px-3 py-2 hover:border-purple-300 hover:bg-purple-50/50 transition-colors flex items-center justify-between"
+                    className="text-left text-sm border border-slate-200 rounded-xl px-3 py-2 hover:border-purple-300 hover:bg-purple-50/50 transition-colors flex items-center justify-between"
                   >
-                    <span className="text-slate-700">{preset.name}</span>
+                    <span className="text-slate-700 font-medium">{preset.name}</span>
                     <span className="text-xs text-slate-400">{preset.rows}×{preset.cols}</span>
                   </button>
                 ))}
@@ -299,7 +315,7 @@ export default function BoardEditor({ board, isFirstBoard, presets, onChange, on
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSavePreset()}
-                className="border border-slate-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400"
+                className="border border-slate-200 rounded-xl px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-4 focus:ring-purple-200/60 focus:border-purple-400"
               />
               <Button icon={BookmarkPlus} onClick={handleSavePreset}>
                 Save

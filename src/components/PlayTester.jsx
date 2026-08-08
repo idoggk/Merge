@@ -1,12 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
-import { PlayCircle, RotateCcw, Lock } from 'lucide-react'
+import { PlayCircle, RotateCcw, Lock, Gamepad2, Zap, Trophy, CheckCircle2 } from 'lucide-react'
 import Card from './ui/Card'
 import Button from './ui/Button'
 import MergeCelebration from './MergeCelebration'
 import { colorForRank, valueOf, MAX_RANK } from '../lib/ranks'
 import { gridWidthRem } from '../lib/board'
 import { tierForRank, celebrationDuration } from '../lib/mergeCelebration'
-import { createPlaySession, canSpendGenerator, spendGenerator, actionFor, moveItem, mergeItems, compareToSimulator } from '../lib/playSession'
+import { currentMaxRank } from '../lib/mergeSimulation'
+import { TIER2_UNLOCK_RANK, TIER4_UNLOCK_RANK } from '../lib/generatorTier'
+import {
+  createPlaySession,
+  canSpendGenerator,
+  spendGenerator,
+  currentGeneratorTier,
+  actionFor,
+  moveItem,
+  mergeItems,
+  compareToSimulator,
+} from '../lib/playSession'
+
+// Mirrors generatorTier.js's currentTier() thresholds/ranks, just laid out
+// for the tier-status list below.
+const GENERATOR_TIERS = [
+  { label: 'x1', cost: 1, rank: 1, unlocksAt: null },
+  { label: 'x2', cost: 2, rank: 2, unlocksAt: TIER2_UNLOCK_RANK },
+  { label: 'x4', cost: 4, rank: 3, unlocksAt: TIER4_UNLOCK_RANK },
+]
 
 // ring-offset punches a solid white gap between the tile and the ring, so
 // the highlight stays visible regardless of the tile's own rank color
@@ -105,7 +124,13 @@ export default function PlayTester({ board }) {
     if (state.itemAt[r][c] == null || state.stuck[r][c]) return
     e.dataTransfer.setData('text/plain', `${r},${c}`)
     e.dataTransfer.effectAllowed = 'move'
-    setSelected([r, c])
+    // Grab the drag image from the tile synchronously, before anything else
+    // touches it. Without this, the browser takes its default snapshot on a
+    // later tick, and the setSelected below (which restyles this exact node
+    // with a highlight ring) sometimes lands before that snapshot - the
+    // result is the intermittent broken/blank drag ghost.
+    e.dataTransfer.setDragImage(e.currentTarget, e.currentTarget.offsetWidth / 2, e.currentTarget.offsetHeight / 2)
+    requestAnimationFrame(() => setSelected([r, c]))
   }
 
   function handleDragOver(e) {
@@ -124,6 +149,8 @@ export default function PlayTester({ board }) {
   const maxRankReached = Object.keys(session.reachedAt).length
     ? Math.max(...Object.keys(session.reachedAt).map(Number))
     : 0
+  const maxRankHeld = currentMaxRank(session.state)
+  const activeTier = currentGeneratorTier(session)
 
   const cols = board.cols
   const widthRem = gridWidthRem(cols)
@@ -132,6 +159,7 @@ export default function PlayTester({ board }) {
     <Card
       title="Play tester"
       subtitle="Manually play this board with the same rules the simulator uses — a ground-truth check on whether the automatic simulation actually matches how the game should feel"
+      icon={Gamepad2}
       action={
         <Button variant="secondary" size="sm" icon={RotateCcw} onClick={reset}>
           Reset
@@ -146,7 +174,7 @@ export default function PlayTester({ board }) {
         <div className="flex flex-col gap-5">
           <div className="flex flex-wrap items-start gap-6">
             <div className="flex flex-col gap-3" style={{ maxWidth: `${widthRem}rem` }}>
-              <div className="inline-block bg-slate-100 border border-slate-200 rounded-2xl p-4 select-none">
+              <div className="inline-block bg-gradient-to-br from-indigo-50 via-violet-50 to-fuchsia-50 border border-violet-100 rounded-3xl p-4 shadow-inner select-none">
                 <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 4.25rem))` }}>
                   {session.state.itemAt.map((row, r) =>
                     row.map((rank, c) => {
@@ -166,7 +194,7 @@ export default function PlayTester({ board }) {
                       // type, since a cleared item is fully free from then
                       // on (see mergeSimulation.js's stuck comment).
                       let tileClass = 'bg-violet-50 border-2 border-dashed border-violet-200'
-                      if (locked) tileClass = 'bg-indigo-950 border border-indigo-900 shadow-inner'
+                      if (locked) tileClass = 'bg-gradient-to-br from-indigo-900 to-slate-950 border border-indigo-900 shadow-inner'
                       else if (rank != null && stuck) tileClass = 'border-[3px] border-dashed border-slate-900/60'
                       else if (rank != null) tileClass = 'border border-white/50'
 
@@ -181,7 +209,7 @@ export default function PlayTester({ board }) {
                           onDragEnd={() => setSelected(null)}
                           onClick={() => handleCellClick(r, c)}
                           title={rank ? `rank ${rank} (${valueOf(rank)} DR)${stuck ? ' · stuck, merge-into only until cleared' : ''}` : locked ? 'locked' : 'open'}
-                          className={`relative aspect-square rounded-lg text-white flex flex-col items-center justify-center leading-tight transition-colors ${
+                          className={`relative aspect-square rounded-xl text-white flex flex-col items-center justify-center leading-tight transition-colors shadow-[inset_0_2px_0_rgba(255,255,255,0.35)] ${
                             movable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                           } ${tileClass} ${
                             isSelected ? 'ring-4 ring-offset-2 ring-offset-white ring-purple-500' : ''
@@ -191,7 +219,7 @@ export default function PlayTester({ board }) {
                           {stuck && rank != null && <Lock size={11} className="absolute top-1 left-1 text-white/80" />}
                           {rank != null && (
                             <>
-                              <span className="text-base font-bold">{rank}</span>
+                              <span className="font-display text-base font-bold drop-shadow-sm">{rank}</span>
                               <span className="text-[10px] font-semibold opacity-85">{valueOf(rank)} DR</span>
                             </>
                           )}
@@ -215,27 +243,63 @@ export default function PlayTester({ board }) {
             </div>
 
             <div className="flex flex-col gap-4 flex-1 min-w-64">
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">DR spent</span>
-                  <span className="font-semibold text-slate-800 tabular-nums">{session.drSpent}</span>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-3">
+                  <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                    <Zap size={12} strokeWidth={2.5} /> DR spent
+                  </span>
+                  <span className="font-display text-2xl font-bold tabular-nums text-amber-700">{session.drSpent}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">Highest rank reached</span>
-                  <span className="font-semibold text-slate-800 tabular-nums">{maxRankReached || '—'}</span>
+                <div className="flex flex-col gap-1 rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-fuchsia-50 p-3">
+                  <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-purple-700">
+                    <Trophy size={12} strokeWidth={2.5} /> Highest rank
+                  </span>
+                  <span className="font-display text-2xl font-bold tabular-nums text-purple-700">{maxRankReached || '—'}</span>
                 </div>
               </div>
 
+              <div className="flex flex-col gap-1 rounded-2xl border border-slate-200 bg-slate-50/70 p-2.5">
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 px-1">
+                  <Zap size={12} strokeWidth={2.5} /> Generator tiers
+                </span>
+                {GENERATOR_TIERS.map((t) => {
+                  const unlocked = t.unlocksAt == null || maxRankHeld >= t.unlocksAt
+                  const active = activeTier.cost === t.cost
+                  return (
+                    <div
+                      key={t.label}
+                      className={`flex items-center justify-between text-xs rounded-lg px-2 py-1.5 transition-colors ${
+                        active ? 'bg-gradient-to-r from-purple-100 to-fuchsia-100 text-purple-800 font-semibold' : unlocked ? 'text-slate-600' : 'text-slate-400'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {active ? (
+                          <CheckCircle2 size={13} className="text-purple-600 shrink-0" />
+                        ) : unlocked ? (
+                          <span className="w-3.5 shrink-0" />
+                        ) : (
+                          <Lock size={11} className="shrink-0" />
+                        )}
+                        {t.label} · {t.cost} DR → rank {t.rank}
+                      </span>
+                      <span className={active ? 'text-purple-600' : 'text-slate-400'}>
+                        {active ? 'active' : unlocked ? 'unlocked' : `unlocks at rank ${t.unlocksAt}`}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+
               <Button variant="primary" icon={PlayCircle} onClick={handleSpend} disabled={!canSpendGenerator(session)}>
-                Spend generator (1 DR → rank 1)
+                Spend generator ({activeTier.cost} DR → rank {activeTier.normalRank})
               </Button>
 
               <Button variant="secondary" onClick={() => setCompared(compareToSimulator(session))}>
                 Compare to automatic simulator at {session.drSpent} DR
               </Button>
               {compared && (
-                <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-1">
-                  <span className="font-medium text-slate-700">Simulator's reachedAt at this DR spend:</span>
+                <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col gap-1">
+                  <span className="font-semibold text-slate-700">Simulator's reachedAt at this DR spend:</span>
                   {Object.keys(compared.reachedAt).length === 0 ? (
                     <span className="text-slate-400">nothing reached yet</span>
                   ) : (
@@ -250,7 +314,7 @@ export default function PlayTester({ board }) {
                 </div>
               )}
 
-              <div className="flex flex-col gap-1 text-xs text-slate-500 max-h-72 overflow-y-auto border border-slate-100 rounded-lg p-2">
+              <div className="flex flex-col gap-1 text-[11px] font-mono text-slate-500 max-h-72 overflow-y-auto bg-slate-50/70 border border-slate-100 rounded-xl p-2.5">
                 {session.events
                   .slice()
                   .reverse()

@@ -88,27 +88,31 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-slate-200">
-        <div className="max-w-[1760px] mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="bg-purple-600 text-white rounded-lg p-1.5">
-              <Puzzle size={18} />
+    <div className="min-h-screen">
+      <div className="app-backdrop" aria-hidden="true" />
+
+      <header className="bg-white/80 backdrop-blur-md border-b border-white sticky top-0 z-30 shadow-sm shadow-purple-950/5">
+        <div className="max-w-[1760px] mx-auto px-6 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-purple-600 to-fuchsia-500 text-white rounded-xl p-2 shadow-md shadow-purple-500/30">
+              <Puzzle size={20} strokeWidth={2.25} />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-slate-900 leading-tight">Merge Mania Board Simulator</h1>
+              <h1 className="font-display text-lg font-bold text-slate-900 leading-tight tracking-tight">Merge Mania Board Simulator</h1>
               <p className="text-xs text-slate-400 leading-tight">Board layout &amp; item-placement design tool</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <div className="flex items-center gap-1 bg-slate-100/80 rounded-xl p-1">
               {MODES.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => setMode(id)}
-                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition-colors ${
-                    mode === id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150 ${
+                    mode === id
+                      ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white shadow-sm shadow-purple-500/30'
+                      : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
                   <Icon size={14} strokeWidth={2.25} />

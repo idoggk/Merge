@@ -1,4 +1,5 @@
-import { simulatePlaythrough, buildInitialState, inBounds, buildReachability, performMerge, findSpawnCell } from './mergeSimulation'
+import { simulatePlaythrough, buildInitialState, inBounds, buildReachability, performMerge, findSpawnCell, currentMaxRank } from './mergeSimulation'
+import { currentTier } from './generatorTier'
 
 // An interactive counterpart to simulatePlaythrough: the same merge/reveal
 // rule primitives (buildInitialState, buildReachability, performMerge), but
@@ -6,13 +7,14 @@ import { simulatePlaythrough, buildInitialState, inBounds, buildReachability, pe
 // heuristic - built so the economist can manually play a board and compare
 // what they did against what the automatic simulator predicts.
 //
-// The generator here always spawns a plain rank 1 for 1 DR - no tier
-// gating, no lucky-drop bonus - and drops it using the same findSpawnCell
-// placement heuristic the automatic simulator uses (the player doesn't pick
-// where it lands). Those model the *automatic* simulator's aggregate
-// pacing/placement; this tool exists to isolate and check merge/reveal
-// mechanics by hand, and tier/lucky-drop randomness or manual placement
-// would only obscure that.
+// The generator is tier-gated exactly like the automatic simulator's
+// (currentTier, keyed off the player's current max rank held) - x1/1DR by
+// default, x2/2DR once a rank-7 item is held, x4/4DR once a rank-10 item is
+// held. Deliberately excluded: lucky-drop bonus ranks and manual spawn
+// placement (still the same findSpawnCell heuristic the automatic simulator
+// uses) - this tool exists to isolate and check merge/reveal mechanics by
+// hand, and lucky-drop randomness or manual placement would only obscure
+// that.
 export function createPlaySession(board) {
   const state = buildInitialState(board)
   const session = { board, state, drSpent: 0, reachedAt: {}, events: [] }
@@ -52,16 +54,25 @@ export function canSpendGenerator(session) {
   return false
 }
 
-// Spends 1 DR and drops a rank-1 item using the same placement heuristic
-// the automatic simulator uses - the player doesn't choose where it lands.
+// Which generator tier is currently active - the same dynamic (non-ratchet)
+// gating the automatic simulator uses, re-evaluated off the player's CURRENT
+// max rank held every time this is called.
+export function currentGeneratorTier(session) {
+  return currentTier(currentMaxRank(session.state))
+}
+
+// Spends the current tier's DR cost and drops an item of its rank, placed
+// using the same findSpawnCell heuristic the automatic simulator uses - the
+// player doesn't choose where it lands.
 export function spendGenerator(session) {
   if (!canSpendGenerator(session)) return session
   const { state } = session
-  session.drSpent += 1
-  const cell = findSpawnCell(state, 1)
-  state.itemAt[cell[0]][cell[1]] = 1
-  logEvent(session, { type: 'spend', tier: 1, cell, rank: 1 })
-  makeRecordRank(session)(1)
+  const tier = currentGeneratorTier(session)
+  session.drSpent += tier.cost
+  const cell = findSpawnCell(state, tier.normalRank)
+  state.itemAt[cell[0]][cell[1]] = tier.normalRank
+  logEvent(session, { type: 'spend', tier: tier.cost, cell, rank: tier.normalRank })
+  makeRecordRank(session)(tier.normalRank)
   return session
 }
 
