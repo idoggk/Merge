@@ -37,7 +37,7 @@ export default function SimulationReport({ board, boards, boardIndex }) {
   return (
     <Card
       title="Playthrough simulation"
-      subtitle="Simulated DR spent to first reach each rank, merging this board's items"
+      subtitle="Simulated DR spent, and generator taps needed, to first reach each rank"
       icon={LineChart}
       className="flex-1 min-w-64"
     >
@@ -68,10 +68,19 @@ export default function SimulationReport({ board, boards, boardIndex }) {
 
         {result && (
           <>
-            <div className="grid grid-cols-[5rem_1fr_4rem] gap-y-1.5 items-center text-sm">
+            <div className="grid grid-cols-[5rem_1fr_4rem_5rem] gap-y-1.5 items-center text-sm">
+              <div className="contents text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <span />
+                <span />
+                <span className="text-right">DR</span>
+                <span className="text-right">Taps</span>
+              </div>
               {RANKS.map((rank) => {
                 const dr = result.reachedAt[rank]
                 const pct = dr == null ? 0 : (Math.log(dr + 1) / Math.log(maxDr + 1)) * 100
+                const taps = result.tapsAt[rank]
+                const prevTaps = result.tapsAt[rank - 1] ?? 0
+                const tapsDelta = taps != null ? taps - prevTaps : null
                 return (
                   <div key={rank} className="contents">
                     <span className="flex items-center gap-1.5 text-slate-600">
@@ -84,6 +93,9 @@ export default function SimulationReport({ board, boards, boardIndex }) {
                       )}
                     </div>
                     <span className="text-right tabular-nums font-medium text-slate-500">{dr ?? '—'}</span>
+                    <span className="text-right tabular-nums text-slate-400">
+                      {tapsDelta != null ? `+${tapsDelta} tap${tapsDelta === 1 ? '' : 's'}` : ''}
+                    </span>
                   </div>
                 )
               })}

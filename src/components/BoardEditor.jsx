@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Grid2x2,
-  Rows3,
   Coins,
   ListOrdered,
   Layers,
@@ -121,6 +120,26 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
           icon={Grid2x2}
           className="shrink-0"
         >
+          <div className="flex flex-wrap gap-4 mb-4">
+            <NumberField
+              label="Rows"
+              min={1}
+              max={isFirstBoard ? 20 : 3}
+              hint={isFirstBoard ? undefined : 'Boards after the first push in as a wave of rows once the previous board clears out — capped at 3'}
+              value={board.rows}
+              onChange={(e) => handleDimensionChange(Math.min(Number(e.target.value) || 1, isFirstBoard ? 20 : 3), board.cols)}
+              className="w-36"
+            />
+            <NumberField
+              label="Columns"
+              min={1}
+              max={20}
+              hint={isFirstBoard ? undefined : "Keep this matching Board 1's columns so the pushed-in rows line up cleanly"}
+              value={board.cols}
+              onChange={(e) => handleDimensionChange(board.rows, Number(e.target.value) || 1)}
+              className="w-36"
+            />
+          </div>
           <BoardGrid tiles={board.tiles} placements={board.semiPlacements} onPaint={handlePaint} onFillAll={handleFillAll} />
         </Card>
 
@@ -167,27 +186,6 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
       </div>
 
       <div className="flex flex-wrap gap-6 flex-1 min-w-72">
-        <Card title="Board size" icon={Rows3} className="flex-1 min-w-64">
-          <div className="grid grid-cols-2 gap-4">
-            <NumberField
-              label="Rows"
-              min={1}
-              max={isFirstBoard ? 20 : 3}
-              hint={isFirstBoard ? undefined : 'Boards after the first push in as a wave of rows once the previous board clears out — capped at 3'}
-              value={board.rows}
-              onChange={(e) => handleDimensionChange(Math.min(Number(e.target.value) || 1, isFirstBoard ? 20 : 3), board.cols)}
-            />
-            <NumberField
-              label="Columns"
-              min={1}
-              max={20}
-              hint={isFirstBoard ? undefined : "Keep this matching Board 1's columns so the pushed-in rows line up cleanly"}
-              value={board.cols}
-              onChange={(e) => handleDimensionChange(board.rows, Number(e.target.value) || 1)}
-            />
-          </div>
-        </Card>
-
         <Card
           title="Subsidy & rank window"
           subtitle="Blocked-tile value and the allowed item rank range"

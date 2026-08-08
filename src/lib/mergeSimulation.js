@@ -350,13 +350,20 @@ export function advanceBoards(state, boards, nextBoardIndex, inventory, onPush) 
 // greedy loop drains before spending any new DR.
 //
 // Returns reachedAt: { [rank]: drSpentWhenFirstReached }, sparse — ranks
-// never reached in this run are absent. `stopReason` explains why the run
-// ended: 'max-rank-reached', 'no-legal-move', 'budget-exhausted', or
-// 'max-steps' (a safety valve, not expected to trigger in practice).
-// `inventoryRemaining` is how many items were still sitting unplaced in the
-// inventory when the run stopped (only possible with 'no-legal-move' or
-// 'budget-exhausted' — the board ran out of room, or DR, before they could
-// go back on).
+// never reached in this run are absent. `tapsAt: { [rank]: generatorSpendsSoFarWhenFirstReached }`
+// is the same shape, counting generator-spend actions only (not merges, not
+// inventory placements — both of those are free and player-effortless; a
+// "tap" is specifically a DR-costing generator spend, at whatever tier was
+// active at the time, since the tier itself already governs how many DR
+// each tap costs and which rank it drops). Consumers wanting "taps between
+// rank N-1 and rank N" (accounting for a tier boundary falling inside that
+// span) should diff consecutive entries themselves — see SimulationReport.jsx.
+// `stopReason` explains why the run ended: 'max-rank-reached',
+// 'no-legal-move', 'budget-exhausted', or 'max-steps' (a safety valve, not
+// expected to trigger in practice). `inventoryRemaining` is how many items
+// were still sitting unplaced in the inventory when the run stopped (only
+// possible with 'no-legal-move' or 'budget-exhausted' — the board ran out of
+// room, or DR, before they could go back on).
 //
 // options.trace: true also returns `events`, a step-by-step log (initial
 // board state, each spend/merge/reveal/board-push, each first-time-reached
@@ -373,10 +380,13 @@ export function simulatePlaythrough(boards, options = {}) {
   const log = trace ? (e) => events.push({ drSpent, ...e }) : null
 
   let drSpent = 0
+  let taps = 0
   const reachedAt = {}
+  const tapsAt = {}
   const recordRank = (rank) => {
     if (reachedAt[rank] === undefined) {
       reachedAt[rank] = drSpent
+      tapsAt[rank] = taps
       log?.({ type: 'reached', rank })
     }
   }
@@ -434,6 +444,7 @@ export function simulatePlaythrough(boards, options = {}) {
     }
 
     drSpent += tier.cost
+    taps += 1
     // Lucky drops only open once the player holds a rank-7+ item — same
     // threshold as the x2 tier unlock. Before that, every spend is a
     // guaranteed normal roll; nextBonus() isn't called at all pre-unlock so
@@ -449,6 +460,6 @@ export function simulatePlaythrough(boards, options = {}) {
   }
 
   log?.({ type: 'stop', reason: stopReason })
-  const result = { reachedAt, drSpent, stopReason, inventoryRemaining: inventory.length }
+  const result = { reachedAt, tapsAt, drSpent, stopReason, inventoryRemaining: inventory.length }
   return trace ? { ...result, events } : result
 }
