@@ -90,7 +90,7 @@ export function actionFor(session, from, to) {
     return buildReachability(state).sameComponent(fr, fc, tr, tc) ? 'move' : null
   }
   if (targetItem !== state.itemAt[fr][fc]) return null
-  if (areAdjacent(from, to)) return 'merge'
+  if (areAdjacent(from, to) || buildReachability(state).sameComponent(fr, fc, tr, tc)) return 'merge'
   return null
 }
 
@@ -105,7 +105,13 @@ export function moveItem(session, from, to) {
 export function mergeItems(session, from, to) {
   const { state } = session
   const rank = state.itemAt[from[0]][from[1]]
-  performMerge(state, { mover: from, receiver: to, rank }, makeRecordRank(session), (e) => logEvent(session, e))
+  // A long-distance (reachable-but-not-adjacent) merge doesn't reveal
+  // around the mover's original cell - see performMerge's comment. The
+  // player watched the merge happen at `to`; a tile popping open somewhere
+  // near wherever the dragged item used to sit has no visible connection
+  // to that and reads as a random, unrelated event.
+  const options = { revealAroundMover: areAdjacent(from, to) }
+  performMerge(state, { mover: from, receiver: to, rank }, makeRecordRank(session), (e) => logEvent(session, e), options)
   return session
 }
 
