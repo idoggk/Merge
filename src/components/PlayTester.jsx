@@ -154,7 +154,7 @@ export default function PlayTester({ board }) {
                           onDragEnd={() => setSelected(null)}
                           onClick={() => handleCellClick(r, c)}
                           title={rank ? `rank ${rank} (${valueOf(rank)} DR)${stuck ? ' · stuck, merge-into only until cleared' : ''}` : locked ? 'locked' : 'open'}
-                          className={`relative aspect-square rounded-lg text-white flex flex-col items-center justify-center leading-tight transition-all hover:scale-[1.05] hover:z-10 ${
+                          className={`relative aspect-square rounded-lg text-white flex flex-col items-center justify-center leading-tight transition-colors ${
                             movable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                           } ${tileClass} ${
                             isSelected ? 'ring-4 ring-offset-2 ring-offset-white ring-purple-500' : ''
