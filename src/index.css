@@ -7,3 +7,17 @@
 body {
   margin: 0;
 }
+
+/* Merge celebration particles (see MergeCelebration.jsx) - each particle
+   flies from the merge cell's center out to a randomized (--dx, --dy)
+   offset while spinning (--rot) and fading out. */
+@keyframes merge-particle {
+  0% {
+    transform: translate(-50%, -50%) translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(0.5) rotate(var(--rot));
+    opacity: 0;
+  }
+}

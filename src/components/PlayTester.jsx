@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PlayCircle, RotateCcw, Lock } from 'lucide-react'
 import Card from './ui/Card'
 import Button from './ui/Button'
+import MergeCelebration from './MergeCelebration'
 import { colorForRank, valueOf, MAX_RANK } from '../lib/ranks'
 import { gridWidthRem } from '../lib/board'
+import { tierForRank, celebrationDuration } from '../lib/mergeCelebration'
 import { createPlaySession, canSpendGenerator, spendGenerator, actionFor, moveItem, mergeItems, compareToSimulator } from '../lib/playSession'
 
 // ring-offset punches a solid white gap between the tile and the ring, so
@@ -20,6 +22,11 @@ export default function PlayTester({ board }) {
   const [session, setSession] = useState(() => createPlaySession(board))
   const [selected, setSelected] = useState(null)
   const [compared, setCompared] = useState(null)
+  const [celebration, setCelebration] = useState(null)
+  const celebrationTimeout = useRef(null)
+  const nextCelebrationKey = useRef(0)
+
+  useEffect(() => () => clearTimeout(celebrationTimeout.current), [])
 
   const hasSubsidyTiles = board.tiles.some((row) => row.some((s) => s === 'blocked' || s === 'semi'))
   const needsGeneration = hasSubsidyTiles && board.semiPlacements.length === 0 && board.blockedQueue.length === 0
@@ -28,6 +35,19 @@ export default function PlayTester({ board }) {
     setSession(createPlaySession(board))
     setSelected(null)
     setCompared(null)
+    clearTimeout(celebrationTimeout.current)
+    setCelebration(null)
+  }
+
+  // Bigger merges get a bigger burst (see MergeCelebration's tiers) - purely
+  // cosmetic feedback, keyed uniquely per trigger so two merges landing on
+  // the same cell in a row each get their own fresh animation instead of
+  // React bailing out on an "unchanged" celebration prop.
+  function celebrateMerge(cell, newRank) {
+    const tier = tierForRank(newRank)
+    clearTimeout(celebrationTimeout.current)
+    setCelebration({ key: nextCelebrationKey.current++, row: cell[0], col: cell[1], tier })
+    celebrationTimeout.current = setTimeout(() => setCelebration(null), celebrationDuration(tier))
   }
 
   // playSession's actions mutate the session object they're given (see its
@@ -44,9 +64,16 @@ export default function PlayTester({ board }) {
   }
 
   function applyAction(kind, from, to) {
-    if (kind === 'move') moveItem(session, from, to)
-    else if (kind === 'merge') mergeItems(session, from, to)
-    else return
+    if (kind === 'move') {
+      moveItem(session, from, to)
+    } else if (kind === 'merge') {
+      const before = session.events.length
+      mergeItems(session, from, to)
+      const mergeEvent = session.events.slice(before).find((e) => e.type === 'merge')
+      if (mergeEvent) celebrateMerge(mergeEvent.into, mergeEvent.newRank)
+    } else {
+      return
+    }
     setSession({ ...session })
   }
 
@@ -167,6 +194,9 @@ export default function PlayTester({ board }) {
                               <span className="text-base font-bold">{rank}</span>
                               <span className="text-[10px] font-semibold opacity-85">{valueOf(rank)} DR</span>
                             </>
+                          )}
+                          {celebration && celebration.row === r && celebration.col === c && (
+                            <MergeCelebration key={celebration.key} tier={celebration.tier} />
                           )}
                         </button>
                       )
