@@ -6,26 +6,17 @@ import MergeCelebration from './MergeCelebration'
 import { colorForRank, valueOf, MAX_RANK } from '../lib/ranks'
 import { gridWidthRem } from '../lib/board'
 import { tierForRank, celebrationDuration } from '../lib/mergeCelebration'
-import { currentMaxRank } from '../lib/mergeSimulation'
-import { TIER2_UNLOCK_RANK, TIER4_UNLOCK_RANK } from '../lib/generatorTier'
+import { GENERATOR_TIERS } from '../lib/generatorTier'
 import {
   createPlaySession,
   canSpendGenerator,
   spendGenerator,
-  currentGeneratorTier,
+  unlockedGeneratorTiers,
   actionFor,
   moveItem,
   mergeItems,
   compareToSimulator,
 } from '../lib/playSession'
-
-// Mirrors generatorTier.js's currentTier() thresholds/ranks, just laid out
-// for the tier-status list below.
-const GENERATOR_TIERS = [
-  { label: 'x1', cost: 1, rank: 1, unlocksAt: null },
-  { label: 'x2', cost: 2, rank: 2, unlocksAt: TIER2_UNLOCK_RANK },
-  { label: 'x4', cost: 4, rank: 3, unlocksAt: TIER4_UNLOCK_RANK },
-]
 
 // ring-offset punches a solid white gap between the tile and the ring, so
 // the highlight stays visible regardless of the tile's own rank color
@@ -42,6 +33,7 @@ export default function PlayTester({ board }) {
   const [selected, setSelected] = useState(null)
   const [compared, setCompared] = useState(null)
   const [celebration, setCelebration] = useState(null)
+  const [chosenTierCost, setChosenTierCost] = useState(1)
   const celebrationTimeout = useRef(null)
   const nextCelebrationKey = useRef(0)
 
@@ -54,6 +46,7 @@ export default function PlayTester({ board }) {
     setSession(createPlaySession(board))
     setSelected(null)
     setCompared(null)
+    setChosenTierCost(1)
     clearTimeout(celebrationTimeout.current)
     setCelebration(null)
   }
@@ -78,7 +71,7 @@ export default function PlayTester({ board }) {
   // ever handing setSession an already-computed plain object sidesteps that
   // - a repeated set to an equivalent object is harmless.
   function handleSpend() {
-    spendGenerator(session)
+    spendGenerator(session, activeTier)
     setSession({ ...session })
   }
 
@@ -149,8 +142,11 @@ export default function PlayTester({ board }) {
   const maxRankReached = Object.keys(session.reachedAt).length
     ? Math.max(...Object.keys(session.reachedAt).map(Number))
     : 0
-  const maxRankHeld = currentMaxRank(session.state)
-  const activeTier = currentGeneratorTier(session)
+  // The player can choose any currently-unlocked tier, not just the
+  // highest - if their choice re-locks (e.g. they merge away their only
+  // rank-7 item), fall back to the highest tier still unlocked.
+  const unlockedTiers = unlockedGeneratorTiers(session)
+  const activeTier = unlockedTiers.find((t) => t.cost === chosenTierCost) ?? unlockedTiers[unlockedTiers.length - 1]
 
   const cols = board.cols
   const widthRem = gridWidthRem(cols)
@@ -263,29 +259,37 @@ export default function PlayTester({ board }) {
                   <Zap size={12} strokeWidth={2.5} /> Generator tiers
                 </span>
                 {GENERATOR_TIERS.map((t) => {
-                  const unlocked = t.unlocksAt == null || maxRankHeld >= t.unlocksAt
-                  const active = activeTier.cost === t.cost
+                  const unlocked = unlockedTiers.some((u) => u.cost === t.cost)
+                  const chosen = activeTier.cost === t.cost
                   return (
-                    <div
-                      key={t.label}
-                      className={`flex items-center justify-between text-xs rounded-lg px-2 py-1.5 transition-colors ${
-                        active ? 'bg-gradient-to-r from-purple-100 to-fuchsia-100 text-purple-800 font-semibold' : unlocked ? 'text-slate-600' : 'text-slate-400'
+                    <button
+                      key={t.cost}
+                      type="button"
+                      disabled={!unlocked}
+                      onClick={() => setChosenTierCost(t.cost)}
+                      title={unlocked ? `Use the x${t.cost} generator` : `Unlocks once you hold a rank-${t.unlocksAt} item`}
+                      className={`flex items-center justify-between text-xs rounded-lg px-2 py-1.5 text-left transition-colors ${
+                        chosen
+                          ? 'bg-gradient-to-r from-purple-100 to-fuchsia-100 text-purple-800 font-semibold ring-1 ring-purple-300'
+                          : unlocked
+                            ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
+                            : 'text-slate-400 cursor-not-allowed'
                       }`}
                     >
                       <span className="flex items-center gap-1.5">
-                        {active ? (
+                        {chosen ? (
                           <CheckCircle2 size={13} className="text-purple-600 shrink-0" />
                         ) : unlocked ? (
                           <span className="w-3.5 shrink-0" />
                         ) : (
                           <Lock size={11} className="shrink-0" />
                         )}
-                        {t.label} · {t.cost} DR → rank {t.rank}
+                        x{t.cost} · {t.cost} DR → rank {t.normalRank}
                       </span>
-                      <span className={active ? 'text-purple-600' : 'text-slate-400'}>
-                        {active ? 'active' : unlocked ? 'unlocked' : `unlocks at rank ${t.unlocksAt}`}
+                      <span className={chosen ? 'text-purple-600' : 'text-slate-400'}>
+                        {chosen ? 'selected' : unlocked ? 'tap to use' : `unlocks at rank ${t.unlocksAt}`}
                       </span>
-                    </div>
+                    </button>
                   )
                 })}
               </div>
