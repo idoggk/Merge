@@ -3,9 +3,9 @@ export const EMOJI_POOL = ['✨', '🎉', '⭐', '💥', '🌟', '💫']
 // Three tiers, scaling with how big the merge's resulting rank is - a small
 // merge gets a single flying emoji, a big one gets a full confetti burst.
 export const TIERS = {
-  small: { count: 1, spread: 34, duration: 650, sizeClass: 'text-lg' },
-  medium: { count: 8, spread: 64, duration: 850, sizeClass: 'text-xl' },
-  big: { count: 20, spread: 100, duration: 1100, sizeClass: 'text-2xl' },
+  small: { count: 2, spread: 55, duration: 750, sizeClass: 'text-2xl' },
+  medium: { count: 12, spread: 100, duration: 950, sizeClass: 'text-3xl' },
+  big: { count: 26, spread: 150, duration: 1300, sizeClass: 'text-4xl' },
 }
 
 export function tierForRank(rank) {
