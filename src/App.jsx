@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Save, Puzzle, LayoutGrid, Gamepad2 } from 'lucide-react'
+import { Save, Puzzle, LayoutGrid, Gamepad2, Boxes } from 'lucide-react'
 import BoardList from './components/BoardList'
 import BoardEditor from './components/BoardEditor'
 import PlayTester from './components/PlayTester'
+import CCManagement from './components/CCManagement'
 import Button from './components/ui/Button'
 import { createBoard, cloneBoard } from './lib/board'
 import { loadState, saveState } from './lib/persistence'
@@ -10,6 +11,7 @@ import { loadState, saveState } from './lib/persistence'
 const MODES = [
   { id: 'editor', label: 'Editor', icon: LayoutGrid },
   { id: 'play', label: 'Play tester', icon: Gamepad2 },
+  { id: 'cc', label: 'CC management', icon: Boxes },
 ]
 
 function initialState() {
@@ -154,6 +156,7 @@ function App() {
           />
         )}
         {activeBoard && mode === 'play' && <PlayTester key={activeBoard.id} boards={boards} boardIndex={activeIndex} />}
+        {mode === 'cc' && <CCManagement boards={boards} />}
       </main>
     </div>
   )
