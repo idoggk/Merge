@@ -12,6 +12,7 @@ import {
   Layers,
   Sparkles,
   Gift,
+  PiggyBank,
 } from 'lucide-react'
 import BoardGrid from './BoardGrid'
 import SimulationReport from './SimulationReport'
@@ -142,6 +143,8 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
   const targetEv = board.targetEv ?? DEFAULT_TARGET_EV
   const [pNormal, pPlus1, pPlus2] = computeProbs(targetEv)
 
+  const totalSubsidy = boards.reduce((sum, b) => sum + b.blockedValue, 0)
+
   return (
     <div className="flex flex-wrap items-start gap-6">
       <div className="flex flex-col gap-6">
@@ -217,6 +220,33 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
       </div>
 
       <div className="flex flex-wrap gap-6 flex-1 min-w-72">
+        {isFirstBoard && (
+          <Card
+            title="Total subsidy"
+            subtitle="Sum of blocked value across every board in this chain, with a per-board breakdown"
+            icon={PiggyBank}
+            className="flex-1 min-w-64"
+          >
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between rounded-xl bg-gradient-to-br from-purple-50 to-fuchsia-50 border border-purple-200 px-3 py-2.5">
+                <span className="text-sm text-slate-600">Total (all boards)</span>
+                <span className="font-display text-2xl font-bold text-purple-700 tabular-nums">{totalSubsidy} DR</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                {boards.map((b, i) => (
+                  <div key={b.id} className="flex items-center justify-between text-sm px-1">
+                    <span className={`text-slate-600 ${b.id === board.id ? 'font-semibold text-purple-700' : ''}`}>
+                      {b.name}
+                      <span className="text-slate-400 font-normal"> {i === 0 ? '(start)' : `(wave ${i})`}</span>
+                    </span>
+                    <span className="font-medium text-slate-800 tabular-nums">{b.blockedValue} DR</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+        )}
+
         <Card
           title="Subsidy & rank window"
           subtitle="Blocked-tile value and the allowed item rank range"
