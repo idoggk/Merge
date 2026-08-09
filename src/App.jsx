@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Save, Puzzle, LayoutGrid, Gamepad2, Boxes, FileCode2, Share2, Check } from 'lucide-react'
+import { Save, Puzzle, LayoutGrid, Gamepad2, Boxes, FileCode2, Share2, Check, TriangleAlert } from 'lucide-react'
 import BoardList from './components/BoardList'
 import BoardEditor from './components/BoardEditor'
 import PlayTester from './components/PlayTester'
@@ -10,7 +10,7 @@ import Button from './components/ui/Button'
 import { createBoard, cloneBoard } from './lib/board'
 import { loadState, saveState } from './lib/persistence'
 import { DEFAULT_TARGET_EV } from './lib/luckyDrop'
-import { encodeStage, decodeStage } from './lib/stageShare'
+import { encodeStage, decodeStage, MAX_SAFE_STAGE_CHARS } from './lib/stageShare'
 import { createDefaultStage } from './data/defaultStage'
 
 const MODES = [
@@ -46,16 +46,36 @@ function initialState() {
 // economist app entirely, so a friend opening the link never sees the
 // editor/CC-management/syntax tooling. No stage param falls back to the
 // baked-in defaultStage.js demo, so a bare "?play" link is still meaningful.
+//
+// A stage param that's PRESENT but fails to decode (cut off by a chat app,
+// mangled by copy-paste, etc. - see stageShare.js/CLAUDE.md for the CDN
+// URL-length ceiling this is guarding against) is deliberately NOT treated
+// the same as "no stage param at all" - silently substituting the default
+// demo there would look identical to "nothing went wrong," which is exactly
+// what made this bug hard to diagnose from a bug report alone. `linkBroken`
+// surfaces it instead.
 function PlayApp() {
-  const [boards] = useState(() => {
+  const [{ boards, linkBroken }] = useState(() => {
     const params = new URLSearchParams(window.location.search)
-    return decodeStage(params.get('stage')) ?? createDefaultStage().boards
+    const stageParam = params.get('stage')
+    if (!stageParam) return { boards: createDefaultStage().boards, linkBroken: false }
+    const decoded = decodeStage(stageParam)
+    return decoded ? { boards: decoded, linkBroken: false } : { boards: createDefaultStage().boards, linkBroken: true }
   })
 
   return (
     <div className="min-h-screen">
       <div className="app-backdrop" aria-hidden="true" />
       <main className="max-w-[1760px] mx-auto px-3 py-4 sm:px-6 sm:py-10 play-compact-py">
+        {linkBroken && (
+          <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800 max-w-4xl mx-auto">
+            <TriangleAlert size={16} className="shrink-0 mt-0.5" />
+            <span className="text-sm">
+              This share link looks broken or got cut off along the way, so we're showing the demo stage instead —
+              ask whoever sent it to re-share the link.
+            </span>
+          </div>
+        )}
         <PlayStage boards={boards} />
       </main>
     </div>
@@ -69,6 +89,7 @@ function EditorApp() {
   const [savedAt, setSavedAt] = useState(null)
   const [mode, setMode] = useState('editor')
   const [shareCopied, setShareCopied] = useState(false)
+  const [shareWarning, setShareWarning] = useState(null)
 
   const activeIndex = boards.findIndex((b) => b.id === activeId)
   const activeBoard = boards[activeIndex] ?? boards[0]
@@ -124,13 +145,24 @@ function EditorApp() {
 
   // Encodes the current board list into the URL and copies a shareable
   // player link - the recipient's browser never touches this app's
-  // localStorage, so the boards have to travel in the link itself.
+  // localStorage, so the boards have to travel in the link itself. Still
+  // copies the link even when it's long (the economist's call whether to
+  // send it anyway) - MAX_SAFE_STAGE_CHARS is a warning threshold, not a
+  // hard block, since we can't know the recipient's actual network/client
+  // ahead of time.
   async function handleShare() {
     const url = new URL(window.location.href)
-    url.search = `?play&stage=${encodeStage(boards)}`
-    await navigator.clipboard.writeText(url.toString())
+    const encoded = encodeStage(boards)
+    url.search = `?play&stage=${encoded}`
+    const fullUrl = url.toString()
+    await navigator.clipboard.writeText(fullUrl)
     setShareCopied(true)
     setTimeout(() => setShareCopied(false), 2000)
+    setShareWarning(
+      fullUrl.length > MAX_SAFE_STAGE_CHARS
+        ? `Heads up: this link is long (${boards.length} boards) - some chat apps, email clients, or corporate networks may fail to open it for your recipient. If it doesn't open, try trimming boards.`
+        : null,
+    )
   }
 
   return (
@@ -176,6 +208,22 @@ function EditorApp() {
           </div>
         </div>
       </header>
+
+      {shareWarning && (
+        <div className="max-w-[1760px] mx-auto px-6 pt-4">
+          <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+            <TriangleAlert size={16} className="shrink-0 mt-0.5" />
+            <span className="text-sm flex-1">{shareWarning}</span>
+            <button
+              type="button"
+              onClick={() => setShareWarning(null)}
+              className="text-amber-600 hover:text-amber-800 text-xs font-semibold"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-[1760px] mx-auto px-6 py-6 flex gap-8">
         <BoardList

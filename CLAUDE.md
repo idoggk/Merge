@@ -384,19 +384,68 @@ shared `?play` link must never expose the editor/CC-management/syntax
 tooling, even by a stray click.
 
 **Sharing a designed stage.** `src/lib/stageShare.js`'s `encodeStage`/
-`decodeStage` pack a board list into a URL-safe base64 JSON string carried
-in the `stage` query param — deliberately *not* `localStorage`, since
-that's per-browser and would never reach anyone else's device. The header's
+`decodeStage` pack a board list into a URL-safe string carried in the
+`stage` query param — deliberately *not* `localStorage`, since that's
+per-browser and would never reach anyone else's device. The header's
 "Share stage" button (`EditorApp`'s `handleShare`) copies a full
 `?play&stage=...` link for the economist's *current* board list to the
 clipboard. `decodeStage` returns `null` on anything malformed rather than
-throwing; `PlayApp` treats `null` (missing or bad `stage` param) as "load
-`src/data/defaultStage.js`'s baked-in demo stage" — so a bare `?play` link
-is still meaningful, and a corrupted link degrades to the demo instead of a
-blank crash. This is plain base64, not compressed — fine for a stage that's
-a handful of boards, but if stages grow large enough to hit URL length
-limits, that's a reason to add real compression, not to shorten field names
-(same tradeoff noted in `stageShare.js` itself).
+throwing; `PlayApp` distinguishes *why* it's null — see "The URL-length
+ceiling" below, this used to just silently fall back to the demo stage and
+that silence is exactly what made the underlying bug hard to diagnose from
+a bug report alone.
+
+**The URL-length ceiling — found live, from a real "sharing is failing for
+the other user" bug report.** The stage payload is JSON.stringify'd,
+gzipped via `fflate` (`gzipSync`/`gunzipSync` in `stageShare.js`), then
+base64url-encoded — in that order; gzip has to run on the raw JSON text,
+not on already-base64'd text, or it gets almost none of the win. This isn't
+an aesthetic choice: the *first* version of this feature (plain base64 JSON,
+no compression) worked fine for the tiny 2-board demo stage but was
+confirmed, via live testing against the deployed site with boards generated
+through the app's own real pipeline, to fail hard at **~9-10 boards of
+modest size (5×8, a handful of blocked/semi tiles) — right around an
+8-8.5KB full URL length**. Every failure at and above that length was an
+HTTP **414 "URI Too Long"** from GitHub Pages' own Fastly CDN, a
+server-side rejection that happens *before the app's JS ever runs* — no
+client-side error handling could have caught it, and it has nothing to do
+with `decodeStage` or browser URL limits (modern browsers handle far longer
+URLs fine; this is Fastly specifically, and lines up with the classic 8KB
+request-line default a lot of reverse proxies share). Gzip buys real
+headroom against this because board JSON is extremely repetitive (the same
+tile-state strings and field names over and over) — in testing, a 150-board
+stress-test stage compressed to a ~6.4KB URL, comfortably under the ~8KB
+wall, versus the ~9-10 *board* ceiling before compression. It does not
+remove the ceiling, just raises it a lot; `MAX_SAFE_STAGE_CHARS` (currently
+6000, checked in `handleShare` against the *actual* encoded URL length) is
+a conservative warning threshold for economists building something big
+enough to be at risk again — it still copies the link either way (their
+call), it just flags it. If this formula or the compression approach ever
+changes, re-verify against a live deploy, the same way this was found —
+measuring against a local dev server won't reproduce a CDN-level 414 at
+all.
+
+fflate (a small bundled dependency) over the browser's native
+`CompressionStream`, deliberately: `CompressionStream`/`DecompressionStream`
+only reached Safari in 16.4 (March 2023), and this feature is explicitly
+meant to be played on a phone (see "Phone/landscape support" below) — a
+sender on a modern desktop browser successfully compressing a link that
+then fails to *decompress* on an older-iOS recipient would just be a
+sneakier version of the same "share is broken for the other person" bug.
+fflate's sync API behaves identically on every browser regardless of native
+API support, at the cost of the dependency's size in the bundle.
+
+**A broken link now says so.** `PlayApp` tracks a `linkBroken` flag
+separately from "no `stage` param at all" (a bare `?play` link, which
+legitimately means "show the demo") — a `stage` param that's *present* but
+fails to decode (truncated by a chat app, corrupted by copy-paste, or was
+generated before this fix and is now too long to have ever worked) shows an
+explicit "this share link looks broken" banner alongside the demo stage
+fallback, rather than silently substituting the demo with no indication
+anything went wrong. That silence was a real contributor to why the
+original bug report was hard to act on — the recipient had no way to tell
+"working as intended, just not what was shared" from "something is
+actually broken."
 
 **Default stage.** `src/data/defaultStage.js`'s `createDefaultStage()`
 returns a real, valid 2-board demo (generated once via the app's own
