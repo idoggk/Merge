@@ -39,10 +39,11 @@ function initialState() {
         rewardRanks: [],
         ...b,
       })),
+      targetSubsidy: persisted.targetSubsidy ?? null,
     }
   }
   const first = createBoard('Board 1')
-  return { boards: [first], presets: [] }
+  return { boards: [first], presets: [], targetSubsidy: null }
 }
 
 // A shared stage link (?play, optionally &stage=<encoded boards> — see
@@ -88,7 +89,7 @@ function PlayApp() {
 
 function EditorApp() {
   const [state, setState] = useState(initialState)
-  const { boards, presets } = state
+  const { boards, presets, targetSubsidy } = state
   const [activeId, setActiveId] = useState(() => state.boards[0].id)
   const [savedAt, setSavedAt] = useState(null)
   const [mode, setMode] = useState('editor')
@@ -138,12 +139,34 @@ function EditorApp() {
     })
   }
 
+  // Bulk add/remove from the end to reach `count` - same never-touch-board-0
+  // rule as addBoard/removeBoard, just applied N times at once from the
+  // Total Subsidy card instead of one board at a time from the sidebar.
+  function setBoardCount(count) {
+    const target = Math.max(1, count)
+    if (target === boards.length) return
+    if (target > boards.length) {
+      const additions = Array.from({ length: target - boards.length }, (_, i) =>
+        createBoard(`Board ${boards.length + i + 1}`, { rows: 3 }),
+      )
+      setState((s) => ({ ...s, boards: [...s.boards, ...additions] }))
+      return
+    }
+    const next = boards.slice(0, target)
+    setState((s) => ({ ...s, boards: next }))
+    if (!next.some((b) => b.id === activeId)) setActiveId(next[0].id)
+  }
+
   function savePreset(preset) {
     setState((s) => ({ ...s, presets: [...s.presets, preset] }))
   }
 
+  function updateTargetSubsidy(value) {
+    setState((s) => ({ ...s, targetSubsidy: value }))
+  }
+
   function handleSave() {
-    saveState({ boards, presets })
+    saveState({ boards, presets, targetSubsidy })
     setSavedAt(new Date())
   }
 
@@ -258,7 +281,11 @@ function EditorApp() {
             isFirstBoard={activeIndex === 0}
             presets={presets}
             onChange={updateBoard}
+            onUpdateBoard={updateBoard}
             onSavePreset={savePreset}
+            targetSubsidy={targetSubsidy}
+            onUpdateTargetSubsidy={updateTargetSubsidy}
+            onSetBoardCount={setBoardCount}
           />
         )}
         {activeBoard && mode === 'play' && <PlayTester key={activeBoard.id} boards={boards} boardIndex={activeIndex} />}

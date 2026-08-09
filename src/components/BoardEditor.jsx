@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Wand2,
   BookmarkPlus,
@@ -28,9 +28,33 @@ import { TIER2_UNLOCK_RANK } from '../lib/generatorTier'
 
 const ALL_RANKS = Array.from({ length: MAX_RANK - MIN_RANK + 1 }, (_, i) => i + MIN_RANK)
 
-export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, presets, onChange, onSavePreset }) {
+export default function BoardEditor({
+  board,
+  boards,
+  boardIndex,
+  isFirstBoard,
+  presets,
+  onChange,
+  onUpdateBoard,
+  onSavePreset,
+  targetSubsidy,
+  onUpdateTargetSubsidy,
+  onSetBoardCount,
+}) {
   const [noise, setNoise] = useState(0.15)
   const [presetName, setPresetName] = useState('')
+  // Committed on blur/Enter only, not per-keystroke like NumberField's other
+  // fields - this one adds/removes whole boards, so committing "1" while
+  // someone's still typing "15" would delete boards out from under them.
+  const [boardCountDraft, setBoardCountDraft] = useState(String(boards.length))
+
+  useEffect(() => setBoardCountDraft(String(boards.length)), [boards.length])
+
+  function commitBoardCount() {
+    const n = Math.max(1, Number(boardCountDraft) || boards.length)
+    setBoardCountDraft(String(n))
+    onSetBoardCount(n)
+  }
 
   const blockedTileCount = useMemo(
     () => board.tiles.flat().filter((s) => s === 'blocked' || s === 'semi').length,
@@ -140,6 +164,7 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
   const [pNormal, pPlus1, pPlus2] = computeProbs(targetEv)
 
   const totalSubsidy = boards.reduce((sum, b) => sum + b.blockedValue, 0)
+  const subsidyGoalMet = targetSubsidy != null && totalSubsidy === targetSubsidy
 
   return (
     <div className="flex flex-wrap items-start gap-6">
@@ -219,23 +244,98 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
         {isFirstBoard && (
           <Card
             title="Total subsidy"
-            subtitle="Sum of blocked value across every board in this chain, with a per-board breakdown"
+            subtitle="Set a target DR for this stage, then edit each board's blocked value to hit it"
             icon={PiggyBank}
             className="flex-1 min-w-64"
           >
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap gap-4">
+                <label className="text-sm flex flex-col gap-1.5 w-36">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Number of boards</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={boardCountDraft}
+                    onChange={(e) => setBoardCountDraft(e.target.value)}
+                    onBlur={commitBoardCount}
+                    onKeyDown={(e) => e.key === 'Enter' && commitBoardCount()}
+                    className="border border-slate-200 rounded-xl px-3 py-2 text-slate-800 font-medium bg-white/70 focus:outline-none focus:ring-4 focus:ring-purple-200/60 focus:border-purple-400 transition-shadow"
+                  />
+                </label>
+                <NumberField
+                  label="Target total subsidy (DR)"
+                  min={0}
+                  max={valueOf(MAX_RANK)}
+                  hint="Optional — the total DR this stage should hand out across every board"
+                  value={targetSubsidy ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value.trim()
+                    onUpdateTargetSubsidy(raw === '' ? null : Math.min(Math.max(Number(raw) || 0, 0), valueOf(MAX_RANK)))
+                  }}
+                  className="w-44"
+                />
+              </div>
+              <p className="text-xs text-slate-400 -mt-2">
+                Board 1 always stays first — boards are added or removed from the end; removing a board deletes its
+                layout.
+              </p>
+
               <div className="flex items-center justify-between rounded-xl bg-gradient-to-br from-purple-50 to-fuchsia-50 border border-purple-200 px-3 py-2.5">
                 <span className="text-sm text-slate-600">Total (all boards)</span>
                 <span className="font-display text-2xl font-bold text-purple-700 tabular-nums">{totalSubsidy} DR</span>
               </div>
+
+              {targetSubsidy != null && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        subsidyGoalMet ? 'bg-emerald-500' : 'bg-gradient-to-r from-purple-500 to-fuchsia-500'
+                      }`}
+                      style={{ width: `${targetSubsidy > 0 ? Math.min(100, (totalSubsidy / targetSubsidy) * 100) : 100}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">Goal</span>
+                    <span className={`flex items-center gap-1 font-medium ${subsidyGoalMet ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {subsidyGoalMet ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                      {totalSubsidy} / {targetSubsidy} DR
+                    </span>
+                  </div>
+                  {!subsidyGoalMet && (
+                    <p className="text-xs text-amber-600">
+                      {totalSubsidy < targetSubsidy
+                        ? `${targetSubsidy - totalSubsidy} DR short of the target — allocate more to reach it.`
+                        : `${totalSubsidy - targetSubsidy} DR over the target — trim some boards' blocked value.`}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="flex flex-col gap-1">
                 {boards.map((b, i) => (
-                  <div key={b.id} className="flex items-center justify-between text-sm px-1">
-                    <span className={`text-slate-600 ${b.id === board.id ? 'font-semibold text-purple-700' : ''}`}>
+                  <div key={b.id} className="flex items-center justify-between gap-2 text-sm px-1">
+                    <span className={`text-slate-600 truncate ${b.id === board.id ? 'font-semibold text-purple-700' : ''}`}>
                       {b.name}
                       <span className="text-slate-400 font-normal"> {i === 0 ? '(start)' : `(wave ${i})`}</span>
                     </span>
-                    <span className="font-medium text-slate-800 tabular-nums">{b.blockedValue} DR</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <input
+                        type="number"
+                        min={0}
+                        max={valueOf(MAX_RANK)}
+                        value={b.blockedValue}
+                        onChange={(e) =>
+                          onUpdateBoard(
+                            invalidateLayout(b, {
+                              blockedValue: Math.min(Math.max(Number(e.target.value) || 0, 0), valueOf(MAX_RANK)),
+                            }),
+                          )
+                        }
+                        className="w-20 text-right border border-slate-200 rounded-lg px-2 py-1 text-sm font-medium text-slate-800 bg-white/70 focus:outline-none focus:ring-2 focus:ring-purple-200/60 focus:border-purple-400"
+                      />
+                      <span className="text-xs text-slate-400 w-5">DR</span>
+                    </div>
                   </div>
                 ))}
               </div>

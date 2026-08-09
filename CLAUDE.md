@@ -60,9 +60,28 @@ globally). Each board has:
   allowed under that board's blocked/semi tiles
 
 A segment's boards' `blockedValue`s should sum to that segment's total
-subsidy DR. The app surfaces this as a live check; it does not hard-enforce
-it, by design (the economist may want to over/under-allocate temporarily
-while iterating).
+subsidy DR. The app surfaces this as a live check — an optional
+`targetSubsidy` (top-level app state, alongside `boards`/`presets`, `null`
+by default; see "Persistence" below) that the economist sets in the
+Board-1-gated "Total subsidy" card (`BoardEditor.jsx`), tracked live against
+`boards.reduce((sum, b) => sum + b.blockedValue, 0)` with a progress bar and
+an explicit over/under/met readout. It does not hard-enforce it, by design
+(the economist may want to over/under-allocate temporarily while
+iterating) — going over or under just shows an amber note, never blocks
+anything. That same card also lets the economist edit every board's
+`blockedValue` directly in a per-board list (not just the active board's,
+via `onUpdateBoard` passed down from `App.jsx`, same `invalidateLayout` path
+as every other subsidy edit) and set the board *count* directly (a
+committed-on-blur/Enter field, deliberately NOT using `NumberField`'s
+per-keystroke `onChange` like every other numeric field here — typing "15"
+would transiently commit "1" first and delete boards 2-15 before the second
+digit landed, since this field's value drives an actual array
+add/remove, unlike every other numeric field on this card which only
+changes a number). Since segments aren't implemented (see "Implementation
+status" above), this is all still scoped to the single flat `boards` list,
+not per-segment - if/when a segments layer gets built, `targetSubsidy` is
+the field that'll need to move from top-level app state to somewhere
+segment-scoped.
 
 **Board 1 is special.** The first board a player sees for a given segment
 always guarantees at least one rank-1, rank-2, and rank-3 item among its
@@ -614,8 +633,9 @@ that `base` (and this note) needs to change together.
 ## Persistence
 
 `src/lib/persistence.js` uses real browser `localStorage` (personal, not
-shared) under key `merge-mania-board-simulator`, storing `{ boards, presets }`
-as JSON — note there's no `segments`/`boardsBySeg` shape yet since segments
+shared) under key `merge-mania-board-simulator`, storing
+`{ boards, presets, targetSubsidy }` as JSON — note there's no
+`segments`/`boardsBySeg` shape yet since segments
 aren't implemented (see "Implementation status" above); if a segments layer
 gets built later, this is the shape that'll need to grow to accommodate it.
 Save stays an explicit action (the header's Save button, `App.jsx`'s
