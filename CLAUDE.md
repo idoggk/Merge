@@ -466,6 +466,63 @@ costs nothing and closes off this entire class of "works for me, not for
 them" report for good. If the production URL ever changes (custom domain,
 repo rename - see "Hosting" below), this constant has to move with it.
 
+**First-time-play tutorial.** `src/components/PlayTutorialCoach.jsx` +
+`src/lib/playTutorial.js` are a PlayStage-only coach-mark walkthrough — three
+steps (`'generate'` → `'merge'` → `'blocked'`), each dimming the whole
+screen except one or two real DOM elements (found live via
+`document.querySelector` on `data-tutorial="generate-button"` or
+`data-cell="{row}-{col}"` attributes, not refs) with a callout and a
+bouncing arrow pointing at them. Deliberately named around "tutorial," not
+"onboarding" — `board.onboardingDrBudget`/`onboardingTargetRank` (see
+`GoalSolver.jsx`) is a completely unrelated, pre-existing domain concept
+(the economist's Board-1 DR/rank goal), and sharing that word across two
+unrelated features would be a genuinely confusing name collision, not just
+a style nit.
+- Steps auto-advance on the real action they're teaching: `'generate'` →
+  `'merge'` the moment `spendGenerator` runs once; `'merge'` → `'blocked'`
+  (or straight to done, if the board has no locked cells at all) the moment
+  a real merge event fires. `'blocked'` doesn't auto-advance — reveal timing
+  is stochastic/positional, so it just waits for an explicit "Got it!".
+  `computeTutorialSpec` (the only place that decides what to point at)
+  recomputes fresh from `session.state` every render, so if the pointed-at
+  board configuration changes out from under a step (e.g. the one locked
+  cell it was showing got revealed by that same merge), it naturally
+  degrades to "nothing to show" - a `useEffect` watching for that
+  (`tutorialStep && !tutorialSpec`) finishes the tutorial from there, never
+  mid-render (calling the finish/setState mid-JSX was tried first and is
+  exactly the kind of "works until it doesn't" React anti-pattern this
+  avoids).
+- The dimming is **four separate absolutely-positioned panels** (top/
+  bottom/left/right of the spotlight rect), not a `box-shadow: 0 0 0 9999px`
+  cutout - a box-shadow can fake the *visual* hole but does nothing for
+  hit-testing, and there's no single-element CSS trick that both dims
+  everywhere except a rect AND lets clicks through only inside that rect.
+  The outer `fixed inset-0` wrapper is `pointer-events-none` for the same
+  reason from the other direction: a parent's own box still participates in
+  hit-testing wherever none of its children cover that point, so without
+  this the wrapper silently ate every click over the "hole" even though
+  nothing was visually there to block it - found live, the hard way, via a
+  Playwright click that timed out with "intercepts pointer events" pointing
+  at the wrapper itself. Only the four panels and the tooltip card opt back
+  in with `pointer-events-auto`.
+- The bouncing arrow is rendered **after** the tooltip in DOM order (so it
+  always paints on top if they ever get close enough to overlap), and `GAP`
+  between the spotlight and the tooltip is sized to the arrow's own height
+  plus margin, not a smaller arbitrary number - an earlier version let the
+  tooltip's card cover the lower half of the arrow whenever the target sat
+  near the top of the viewport, since a later sibling always wins the paint
+  order at the same screen position regardless of z-index.
+- If the target starts below the fold (a real, common case on the short
+  landscape-phone viewports this whole app already accounts for - see
+  "Phone/landscape support" below), the coach `scrollIntoView({block:
+  'center'})`s it **once** per step activation, not on every 250ms
+  re-measure - repeating it would fight the player's own scrolling.
+- Shown once ever per browser (`localStorage` key
+  `merge-mania-play-tutorial-seen`, `hasSeenPlayTutorial`/
+  `markPlayTutorialSeen`), replayable any time via PlayStage's own "How to
+  play" header button, dismissible early via "Skip tutorial" on every step -
+  both paths call the same `finishTutorial` (mark seen + clear the step).
+
 **Default stage.** `src/data/defaultStage.js`'s `createDefaultStage()`
 returns a real, valid 2-board demo (generated once via the app's own
 `placeItems` pipeline, then frozen as data — exact-sum verified against
