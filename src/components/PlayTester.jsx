@@ -43,6 +43,7 @@ export default function PlayTester({ boards, boardIndex }) {
   const nextCelebrationKey = useRef(0)
   const luckyCelebrationTimeout = useRef(null)
   const nextLuckyCelebrationKey = useRef(0)
+  const prevHighestUnlockedCost = useRef(1)
 
   useEffect(() => () => clearTimeout(celebrationTimeout.current), [])
   useEffect(() => () => clearTimeout(luckyCelebrationTimeout.current), [])
@@ -55,6 +56,7 @@ export default function PlayTester({ boards, boardIndex }) {
     setSelected(null)
     setCompared(null)
     setChosenTierCost(1)
+    prevHighestUnlockedCost.current = 1
     clearTimeout(celebrationTimeout.current)
     setCelebration(null)
     clearTimeout(luckyCelebrationTimeout.current)
@@ -178,7 +180,19 @@ export default function PlayTester({ boards, boardIndex }) {
   // highest - if their choice re-locks (e.g. they merge away their only
   // rank-7 item), fall back to the highest tier still unlocked.
   const unlockedTiers = unlockedGeneratorTiers(session)
+  const highestUnlockedCost = unlockedTiers[unlockedTiers.length - 1].cost
   const activeTier = unlockedTiers.find((t) => t.cost === chosenTierCost) ?? unlockedTiers[unlockedTiers.length - 1]
+
+  // The moment a new tier unlocks, it becomes the default selection - the
+  // player can still manually pick a different (e.g. lower) one afterward,
+  // same as always, but each fresh unlock re-defaults to "use the best one
+  // you've got" rather than silently staying on whatever was picked before.
+  useEffect(() => {
+    if (highestUnlockedCost > prevHighestUnlockedCost.current) {
+      setChosenTierCost(highestUnlockedCost)
+    }
+    prevHighestUnlockedCost.current = highestUnlockedCost
+  }, [highestUnlockedCost])
 
   const nextBoard = session.nextBoardIndex < session.boards.length ? session.boards[session.nextBoardIndex] : null
 
