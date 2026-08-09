@@ -14,6 +14,13 @@ export function tierForRank(rank) {
   return 'small'
 }
 
+// Lucky drops only ever bump the rank by 1 or 2 (see luckyDrop.js) - no
+// "small" tier here, since a lucky drop landing is always meant to feel
+// like a moment, never a throwaway one.
+export function tierForBonus(bonus) {
+  return bonus >= 2 ? 'big' : 'medium'
+}
+
 export function celebrationDuration(tier) {
   return TIERS[tier].duration
 }

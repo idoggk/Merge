@@ -10,6 +10,7 @@ import {
   Coins,
   ListOrdered,
   Layers,
+  Sparkles,
 } from 'lucide-react'
 import BoardGrid from './BoardGrid'
 import SimulationReport from './SimulationReport'
@@ -22,6 +23,8 @@ import { resizeTiles, gridWidthRem } from '../lib/board'
 import { placeItems } from '../lib/placement'
 import { MIN_RANK, MAX_RANK, colorForRank, valueOf } from '../lib/ranks'
 import { applyPresetToBoard, createPreset } from '../lib/presets'
+import { DEFAULT_TARGET_EV, MIN_TARGET_EV, MAX_TARGET_EV, computeProbs } from '../lib/luckyDrop'
+import { TIER2_UNLOCK_RANK } from '../lib/generatorTier'
 
 export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, presets, onChange, onSavePreset }) {
   const [noise, setNoise] = useState(0.15)
@@ -97,6 +100,14 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
     onChange({ ...board, blockedQueue: next, onboardingStatus: null })
   }
 
+  // Unlike updateBoard's other callers, targetEv doesn't affect item
+  // generation/placement at all - it's purely a generator-RNG parameter
+  // read at play time - so it shouldn't invalidate an already-generated
+  // layout the way dimension/tile/subsidy/rank-window edits do.
+  function updateTargetEv(targetEv) {
+    onChange({ ...board, targetEv })
+  }
+
   function handleApplyPreset(preset) {
     updateBoard({ tiles: applyPresetToBoard(preset, board.rows, board.cols) })
   }
@@ -115,6 +126,9 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
   const overallocated = stats.hasLayout && stats.sum > board.blockedValue
   const countOk = stats.hasLayout && stats.itemCount === blockedTileCount
   const varietyOk = stats.hasRangeVariety !== false
+
+  const targetEv = board.targetEv ?? DEFAULT_TARGET_EV
+  const [pNormal, pPlus1, pPlus2] = computeProbs(targetEv)
 
   return (
     <div className="flex flex-wrap items-start gap-6">
@@ -223,6 +237,51 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
               value={board.maxRank}
               onChange={(e) => updateBoard({ maxRank: Number(e.target.value) || MAX_RANK })}
             />
+          </div>
+        </Card>
+
+        <Card
+          title="Lucky drops"
+          subtitle="Chance the generator drops a higher rank than normal"
+          icon={Sparkles}
+          className="flex-1 min-w-64"
+        >
+          <div className="flex flex-col gap-4">
+            <NumberField
+              label="Target EV multiple"
+              min={MIN_TARGET_EV}
+              max={MAX_TARGET_EV}
+              step={0.01}
+              hint={`1.05 = generator taps are worth 5% more value on average, once unlocked — can't exceed ${MAX_TARGET_EV.toFixed(2)} (the model's own ceiling)`}
+              value={targetEv}
+              onChange={(e) => {
+                const raw = Math.min(Math.max(Number(e.target.value) || DEFAULT_TARGET_EV, MIN_TARGET_EV), MAX_TARGET_EV)
+                // Round to 2dp for display - MAX_TARGET_EV (7/3) isn't a
+                // clean decimal, so clamping straight to it would otherwise
+                // show "2.3333333333333335" the moment someone types past it.
+                updateTargetEv(Math.round(raw * 100) / 100)
+              }}
+            />
+
+            <div className="flex flex-col gap-2 text-sm bg-slate-50/80 border border-slate-200 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Normal (same rank)</span>
+                <span className="font-semibold text-slate-800 tabular-nums">{(pNormal * 100).toFixed(1)}%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">+1 rank</span>
+                <span className="font-semibold text-emerald-600 tabular-nums">{(pPlus1 * 100).toFixed(1)}%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">+2 ranks</span>
+                <span className="font-semibold text-purple-600 tabular-nums">{(pPlus2 * 100).toFixed(1)}%</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Only unlocks once the player holds a rank-{TIER2_UNLOCK_RANK} item — same threshold as the x2
+              generator tier. Every tap before that is a guaranteed normal roll.
+            </p>
           </div>
         </Card>
 

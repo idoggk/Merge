@@ -1,9 +1,6 @@
-import { useState } from 'react'
-import { Boxes, FileCode2, Copy, Check } from 'lucide-react'
+import { Boxes, Sparkles } from 'lucide-react'
 import Card from './ui/Card'
-import Button from './ui/Button'
-import { suggestQueues } from '../lib/ccManagement'
-import { boardsToSyntax } from '../lib/boardSyntax'
+import { suggestQueues, suggestEv } from '../lib/ccManagement'
 import { colorForRank, valueOf } from '../lib/ranks'
 
 function SuggestionColumn({ label, summary, accent }) {
@@ -48,41 +45,39 @@ function SuggestionColumn({ label, summary, accent }) {
   )
 }
 
-function BoardSyntaxCard({ boards }) {
-  const [copied, setCopied] = useState(false)
-  const syntax = boardsToSyntax(boards)
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(syntax)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
+function EvColumn({ label, ev, probs, accent }) {
+  const [pNormal, pPlus1, pPlus2] = probs
   return (
-    <Card
-      title="Board syntax"
-      subtitle="Draft export for the Ops handoff — placeholder format, not final; swap it out in src/lib/boardSyntax.js once the real spec exists"
-      icon={FileCode2}
-      action={
-        <Button variant="secondary" size="sm" icon={copied ? Check : Copy} onClick={handleCopy}>
-          {copied ? 'Copied' : 'Copy all'}
-        </Button>
-      }
-    >
-      <pre className="text-xs font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-4 overflow-x-auto whitespace-pre">
-        {syntax}
-      </pre>
-    </Card>
+    <div className={`flex flex-col gap-2.5 rounded-2xl border p-3.5 ${accent ? 'border-purple-200 bg-gradient-to-br from-purple-50 to-fuchsia-50' : 'border-slate-200 bg-slate-50/60'}`}>
+      <span className={`text-[11px] font-semibold uppercase tracking-wide ${accent ? 'text-purple-700' : 'text-slate-500'}`}>{label}</span>
+      <div className="flex flex-col gap-1 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">Target EV</span>
+          <span className="font-semibold text-slate-800 tabular-nums">{ev.toFixed(2)}x</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">Normal</span>
+          <span className="font-semibold text-slate-800 tabular-nums">{(pNormal * 100).toFixed(1)}%</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">+1 rank</span>
+          <span className="font-semibold text-emerald-600 tabular-nums">{(pPlus1 * 100).toFixed(1)}%</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-500">+2 ranks</span>
+          <span className="font-semibold text-purple-600 tabular-nums">{(pPlus2 * 100).toFixed(1)}%</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
 export default function CCManagement({ boards }) {
   return (
     <div className="flex flex-col gap-6 flex-1 min-w-0">
-      <BoardSyntaxCard boards={boards} />
-
       {boards.map((board, i) => {
         const { current, plus30, plus50 } = suggestQueues(board, i === 0)
+        const ev = suggestEv(board)
         return (
           <Card
             key={board.id}
@@ -90,10 +85,23 @@ export default function CCManagement({ boards }) {
             subtitle="Current queue vs. suggested bigger waves — read-only, nothing here changes the board"
             icon={Boxes}
           >
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <SuggestionColumn label="Current" summary={current} />
-              <SuggestionColumn label="+30% value" summary={plus30} accent />
-              <SuggestionColumn label="+50% value" summary={plus50} accent />
+            <div className="flex flex-col gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <SuggestionColumn label="Current" summary={current} />
+                <SuggestionColumn label="+30% value" summary={plus30} accent />
+                <SuggestionColumn label="+50% value" summary={plus50} accent />
+              </div>
+
+              <div className="flex flex-col gap-3 pt-4 border-t border-slate-200">
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <Sparkles size={12} strokeWidth={2.5} /> Lucky drop EV
+                </span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <EvColumn label="Current" ev={ev.current.ev} probs={ev.current.probs} />
+                  <EvColumn label="+8% EV" ev={ev.plus8.ev} probs={ev.plus8.probs} accent />
+                  <EvColumn label="+12% EV" ev={ev.plus12.ev} probs={ev.plus12.probs} accent />
+                </div>
+              </div>
             </div>
           </Card>
         )

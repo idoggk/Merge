@@ -3,9 +3,10 @@ import { PlayCircle, RotateCcw, Lock, Gamepad2, Zap, Trophy, CheckCircle2, Packa
 import Card from './ui/Card'
 import Button from './ui/Button'
 import MergeCelebration from './MergeCelebration'
+import LuckyDropCelebration from './LuckyDropCelebration'
 import { colorForRank, valueOf, MAX_RANK } from '../lib/ranks'
 import { gridWidthRem } from '../lib/board'
-import { tierForRank, celebrationDuration } from '../lib/mergeCelebration'
+import { tierForRank, tierForBonus, celebrationDuration } from '../lib/mergeCelebration'
 import { GENERATOR_TIERS } from '../lib/generatorTier'
 import {
   createPlaySession,
@@ -36,11 +37,15 @@ export default function PlayTester({ boards, boardIndex }) {
   const [selectedInventoryIndex, setSelectedInventoryIndex] = useState(null)
   const [compared, setCompared] = useState(null)
   const [celebration, setCelebration] = useState(null)
+  const [luckyCelebration, setLuckyCelebration] = useState(null)
   const [chosenTierCost, setChosenTierCost] = useState(1)
   const celebrationTimeout = useRef(null)
   const nextCelebrationKey = useRef(0)
+  const luckyCelebrationTimeout = useRef(null)
+  const nextLuckyCelebrationKey = useRef(0)
 
   useEffect(() => () => clearTimeout(celebrationTimeout.current), [])
+  useEffect(() => () => clearTimeout(luckyCelebrationTimeout.current), [])
 
   const hasSubsidyTiles = board.tiles.some((row) => row.some((s) => s === 'blocked' || s === 'semi'))
   const needsGeneration = hasSubsidyTiles && board.semiPlacements.length === 0 && board.blockedQueue.length === 0
@@ -53,6 +58,8 @@ export default function PlayTester({ boards, boardIndex }) {
     setChosenTierCost(1)
     clearTimeout(celebrationTimeout.current)
     setCelebration(null)
+    clearTimeout(luckyCelebrationTimeout.current)
+    setLuckyCelebration(null)
   }
 
   // Bigger merges get a bigger burst (see MergeCelebration's tiers) - purely
@@ -66,6 +73,17 @@ export default function PlayTester({ boards, boardIndex }) {
     celebrationTimeout.current = setTimeout(() => setCelebration(null), celebrationDuration(tier))
   }
 
+  // A lucky drop is the RNG rewarding the player, not something they did -
+  // separate celebration state from celebrateMerge's so a merge and a lucky
+  // drop landing at different cells in quick succession don't clobber each
+  // other's timers.
+  function celebrateLuckyDrop(cell, bonus) {
+    const tier = tierForBonus(bonus)
+    clearTimeout(luckyCelebrationTimeout.current)
+    setLuckyCelebration({ key: nextLuckyCelebrationKey.current++, row: cell[0], col: cell[1], tier, bonus })
+    luckyCelebrationTimeout.current = setTimeout(() => setLuckyCelebration(null), celebrationDuration(tier))
+  }
+
   // playSession's actions mutate the session object they're given (see its
   // own comments) - that's fine for a single direct call, but passing a
   // function with that same mutation into setSession is not: React (Strict
@@ -75,7 +93,10 @@ export default function PlayTester({ boards, boardIndex }) {
   // ever handing setSession an already-computed plain object sidesteps that
   // - a repeated set to an equivalent object is harmless.
   function handleSpend() {
+    const before = session.events.length
     spendGenerator(session, activeTier)
+    const spendEvent = session.events.slice(before).find((e) => e.type === 'spend')
+    if (spendEvent && spendEvent.bonus > 0) celebrateLuckyDrop(spendEvent.cell, spendEvent.bonus)
     setSession({ ...session })
   }
 
@@ -252,6 +273,9 @@ export default function PlayTester({ boards, boardIndex }) {
                           {celebration && celebration.row === r && celebration.col === c && (
                             <MergeCelebration key={celebration.key} tier={celebration.tier} />
                           )}
+                          {luckyCelebration && luckyCelebration.row === r && luckyCelebration.col === c && (
+                            <LuckyDropCelebration key={luckyCelebration.key} tier={luckyCelebration.tier} bonus={luckyCelebration.bonus} />
+                          )}
                         </button>
                       )
                     }),
@@ -408,7 +432,12 @@ export default function PlayTester({ boards, boardIndex }) {
 function EventLine({ event }) {
   const dr = `[${event.drSpent} DR]`
   if (event.type === 'initial') return <span>{dr} starts with rank {event.rank} at {fmt(event.cell)}</span>
-  if (event.type === 'spend') return <span>{dr} spent {event.tier} DR → rank {event.rank} at {fmt(event.cell)}</span>
+  if (event.type === 'spend')
+    return (
+      <span className={event.bonus > 0 ? 'font-semibold text-amber-600' : undefined}>
+        {dr} {event.bonus > 0 ? `✨ lucky +${event.bonus}! ` : ''}spent {event.tier} DR → rank {event.rank} at {fmt(event.cell)}
+      </span>
+    )
   if (event.type === 'moved') return <span>{dr} moved {fmt(event.from)} → {fmt(event.to)}</span>
   if (event.type === 'merge') return <span>{dr} merged rank {event.rank} → rank {event.newRank} at {fmt(event.into)}</span>
   if (event.type === 'reveal') return <span>{dr} revealed rank {event.rank} at {fmt(event.cell)}</span>

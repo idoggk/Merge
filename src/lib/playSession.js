@@ -9,7 +9,8 @@ import {
   advanceBoards,
   recordAllOccupied,
 } from './mergeSimulation'
-import { currentTier, unlockedTiers } from './generatorTier'
+import { currentTier, unlockedTiers, TIER2_UNLOCK_RANK } from './generatorTier'
+import { DEFAULT_TARGET_EV, computeProbs, rollBonus } from './luckyDrop'
 
 // An interactive counterpart to simulatePlaythrough: the same merge/reveal
 // rule primitives (buildInitialState, buildReachability, performMerge), but
@@ -23,10 +24,19 @@ import { currentTier, unlockedTiers } from './generatorTier'
 // Unlike the automatic simulator (which always greedily spends at the
 // highest unlocked tier), the interactive tool lets the player pick ANY
 // currently-unlocked tier - see unlockedGeneratorTiers/spendGenerator.
-// Deliberately excluded: lucky-drop bonus ranks and manual spawn placement
-// (still the same findSpawnCell heuristic the automatic simulator uses) -
-// this tool exists to isolate and check merge/reveal mechanics by hand, and
-// lucky-drop randomness or manual placement would only obscure that.
+// Spawn placement is still the same findSpawnCell heuristic the automatic
+// simulator uses - the player doesn't choose where a spend lands.
+//
+// The generator can lucky-drop a bonus rank on top of the tier's normal
+// output, same as the automatic simulator and same rank-7-held gate (see
+// spendGenerator) - but using a real per-tap random roll (rollBonus) rather
+// than the automatic simulator's deterministic deficit-scheduler, since a
+// real player expects genuine unpredictability, not a converging sequence.
+// `session.targetEv` is fixed at session creation from the starting board's
+// own targetEv field (not re-read live) - it doesn't change if a later wave
+// board with a different targetEv pushes in, since lucky-drop chance is a
+// property of the generator/player, not of whichever tile pattern happens
+// to be visible.
 //
 // `boards` is the full board list, and play starts on `boards[startIndex]` -
 // every board after it is the wave queue: once the active board has no
@@ -40,6 +50,7 @@ export function createPlaySession(boards, startIndex = 0) {
     boards,
     boardIndex: startIndex,
     nextBoardIndex: startIndex + 1,
+    targetEv: boards[startIndex].targetEv ?? DEFAULT_TARGET_EV,
     state,
     drSpent: 0,
     reachedAt: {},
@@ -104,19 +115,29 @@ export function unlockedGeneratorTiers(session) {
   return unlockedTiers(currentMaxRank(session.state))
 }
 
-// Spends `tier`'s DR cost and drops an item of its rank, placed using the
-// same findSpawnCell heuristic the automatic simulator uses - the player
-// doesn't choose where it lands, only which unlocked tier to spend at.
-// Defaults to the highest unlocked tier (matching the automatic simulator's
-// behavior) when the caller doesn't specify one.
+// Spends `tier`'s DR cost and drops an item of its rank (plus a possible
+// lucky-drop bonus - see the file header comment), placed using the same
+// findSpawnCell heuristic the automatic simulator uses - the player doesn't
+// choose where it lands, only which unlocked tier to spend at. Defaults to
+// the highest unlocked tier (matching the automatic simulator's behavior)
+// when the caller doesn't specify one. The logged 'spend' event's `bonus`
+// field is 0 for a normal drop - callers (PlayTester's celebration trigger)
+// check `bonus > 0` rather than a separate event type.
 export function spendGenerator(session, tier = currentGeneratorTier(session)) {
   if (!canSpendGenerator(session)) return session
   const { state } = session
   session.drSpent += tier.cost
-  const cell = findSpawnCell(state, tier.normalRank)
-  state.itemAt[cell[0]][cell[1]] = tier.normalRank
-  logEvent(session, { type: 'spend', tier: tier.cost, cell, rank: tier.normalRank })
-  makeRecordRank(session)(tier.normalRank)
+
+  // Same threshold as the x2 tier unlock - see mergeSimulation.js's
+  // simulatePlaythrough for the identical rule on the automatic side.
+  const maxRankHeld = currentMaxRank(state)
+  const bonus = maxRankHeld >= TIER2_UNLOCK_RANK ? rollBonus(computeProbs(session.targetEv)) : 0
+  const rank = tier.normalRank + bonus
+
+  const cell = findSpawnCell(state, rank)
+  state.itemAt[cell[0]][cell[1]] = rank
+  logEvent(session, { type: 'spend', tier: tier.cost, cell, rank, bonus })
+  makeRecordRank(session)(rank)
   return session
 }
 

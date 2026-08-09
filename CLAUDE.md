@@ -148,12 +148,55 @@ deliberately different behaviors for the same underlying thresholds, not a
 bug to reconcile.
 
 **Lucky drops.** One shared expected-value multiple (`targetEv`, e.g. 1.05x)
-applies uniformly across all three tiers and all four segments. The
-distribution is solved as a geometric decay: `p(normal) = p0`,
-`p(+1 rank) = p0*k`, `p(+2 ranks) = p0*k^2`, where `k` is the positive root
-in (0,1) of `(1 + 2k + 4k^2) / (1 + k + k^2) = targetEv` (see `solveK`). This
-is intentionally a single free parameter — don't add per-tier or per-segment
-EV without an explicit ask, that was a deliberate simplification.
+applies uniformly across all three tiers within a board. The distribution is
+solved as a geometric decay: `p(normal) = p0`, `p(+1 rank) = p0*k`,
+`p(+2 ranks) = p0*k^2`, where `k` is the positive root in (0,1) of
+`(1 + 2k + 4k^2) / (1 + k + k^2) = targetEv` (see `solveK`). Still
+intentionally a single free parameter per board — don't add per-tier EV
+without an explicit ask, that was a deliberate simplification.
+
+`targetEv` is now a per-board field (`board.js`, default
+`DEFAULT_TARGET_EV = 1.05`), editable in the editor's "Lucky drops" card —
+per-*segment* uniformity was the original design intent (segments aren't
+implemented yet, see "Implementation status"), but per-*board* variation
+during design/tuning was an explicit ask, not scope creep; don't read this
+as license to also add per-tier variation, which remains unasked-for.
+`generateCandidateInRange`/`generateCandidateWithSmallRanks` don't touch
+`targetEv` at all — it's a generator-RNG parameter read only at play time
+(`spendGenerator`, `simulatePlaythrough`), never at item-generation time.
+
+Both the automatic simulator and the play tester roll a bonus the same way
+(same `computeProbs`, same rank-7-held gate as the x2 tier unlock — see
+"Multiplier tiers" above) but via different mechanisms, deliberately: the
+automatic simulator uses `createEvScheduler`'s deterministic deficit
+round-robin (reproducible aggregate math, no randomness); the play tester
+uses `rollBonus` (`Math.random()`-based genuine per-tap unpredictability,
+since a real player doesn't experience a converging sequence). A lucky drop
+in the play tester triggers a distinct celebration (`LuckyDropCelebration`,
+tier by bonus amount: +1 = medium, +2 = big — never "small," a lucky drop is
+always meant to feel like a moment) separate from `MergeCelebration`.
+`session.targetEv` is fixed at play-session creation from the *starting*
+board's own field and never re-reads a later wave board's value — lucky-drop
+chance belongs to the generator/player, not to whichever tile pattern
+happens to be visible.
+
+**The geometric-decay model has a hard ceiling: `targetEv` only has a valid
+solution in `[1, 7/3]` (`MIN_TARGET_EV`/`MAX_TARGET_EV`, `luckyDrop.js`).**
+At `k=0`, EV=1 (never a bonus); at `k=1`, EV=7/3≈2.33 (as close to a flat
+1/3-1/3-1/3 split as this specific 3-outcome model allows) — there is no
+valid probability distribution for this formula above that. `solveK` clamps
+its input to that range before solving (a target above 7/3 clamps down to
+the k=1 distribution, not "more generous than that"), and clamps its own
+output `k` to `[0,1]` with a small epsilon around the boundary (7/3 isn't
+exactly representable in floating point, so the unclamped root can land a
+hair outside `[0,1]` right at the ceiling and get wrongly rejected in favor
+of the *other*, unrelated root — which silently produces the worst-possible
+wrong answer, a collapse to "never any bonus," rather than an overshoot).
+This was found live: exposing `targetEv` as a free-typed field surfaces this
+ceiling constantly (any input past ~2.33, or CC Management's EV suggestions
+math on a moderate base value) — treat any future change to this formula as
+needing the same clamp-at-the-source treatment, not a "seems unlikely"
+caveat.
 
 **Push / stall.** A daily pacing-gap trigger compares actual cumulative
 progress to an expected day-N curve (currently 8/17/28/40/55/75/100 as % of
@@ -260,6 +303,53 @@ board array plus `options.startIndex`, not a single board — every internal
 caller (`onboardingGoal.js`, `placement.js`) that only wants to test one
 board in isolation wraps it in a one-element array.
 
+## CC Management
+
+A read-only, all-boards-at-once view (`CCManagement.jsx`), separate from the
+per-board Editor. Two independent comparisons, each board's own Card:
+
+- **Queue value suggestions** (`suggestQueues`, `ccManagement.js`): Current /
+  +30% / +50% `blockedValue` — *relative* to the board's own current value —
+  `maxRank` capped one rank higher on the suggestions to give the extra
+  value somewhere to go. Computed fresh through whatever generation
+  pipeline that board position already uses (board 0's small-rank guarantee
+  included) — not read from the board's saved
+  `semiPlacements`/`blockedQueue`, so it stays comparable across all three
+  columns even if the board hasn't been generated yet.
+- **Lucky-drop EV suggestions** (`suggestEv`, same file): Current / +8% /
+  +12% `targetEv` — deliberately *fixed absolute* targets (1.08x, 1.12x),
+  **not** relative to the board's own current EV the way the queue
+  suggestions are relative to blockedValue. Don't "fix" this into a
+  relative +30%/+50% to match the queue pattern — that was explicitly
+  rejected as too aggressive for EV specifically. Both suggestion values are
+  clamped to `[MIN_TARGET_EV, MAX_TARGET_EV]` before display (see the
+  lucky-drops ceiling note above) so the shown EV number always matches its
+  own displayed probabilities.
+
+Both are purely informational: nothing on this page writes to a board. The
+Ops syntax export used to live here too; it's now its own "Syntax" tab (see
+below) since it grew a second variant.
+
+## Syntax
+
+A dedicated tab (`SyntaxPage.jsx`) with a Normal/CC toggle, both backed by
+`boardSyntax.js`:
+
+- **Normal** (`boardsToSyntax`/`boardToSyntax`): every board's *actual*
+  saved config, in play order — layout, semi placements, blocked queue,
+  targetEv. This is the "real" Ops export.
+- **CC** (`boardsSuggestionsToSyntax`/`boardSuggestionsToSyntax`): the same
+  document shape, but for CC Management's suggestions instead — each
+  board's +30%/+50% queue and +8%/+12% EV numbers, formatted the same way.
+  Calls into `ccManagement.js`'s `suggestQueues`/`suggestEv` directly (no
+  circular import — `ccManagement.js` doesn't import back from
+  `boardSyntax.js`).
+
+Both are placeholder formats pending the real Ops spec — see the caveat
+below. If the real spec turns out to need a different shape for
+suggestions vs. real config, that's an argument for keeping them as two
+separate functions in `boardSyntax.js` (already true), not for merging them.
+
 ## Known open items / do not silently resolve these
 
 - **Tier re-lock is resolved as dynamic (non-ratchet).** If a player's only
@@ -285,11 +375,13 @@ board in isolation wraps it in a one-element array.
   5×8 region, leaving the rest `"open"` — see "Board layout presets" above.
 - **`src/lib/boardSyntax.js` is an explicitly placeholder Ops export
   format**, not a design decision — the economist hasn't gotten the real
-  syntax spec from Ops yet. It's deliberately isolated (one file, two pure
-  functions, nothing else in the app reads its output) so it can be replaced
-  wholesale the moment the real spec exists. Don't treat its current
-  shape (tile-map ASCII, `(row,col)=Rrank` semi list, comma-separated
-  blocked queue) as meaningful or worth preserving — it's a stand-in.
+  syntax spec from Ops yet. It's deliberately isolated (one file, four pure
+  functions — real-config and suggestions variants, each with a per-board
+  and a whole-chain form — nothing else in the app reads its output) so it
+  can be replaced wholesale the moment the real spec exists. Don't treat its
+  current shape (tile-map ASCII, `(row,col)=Rrank` semi list, comma-separated
+  blocked queue, `QUEUE +N%:`/`EV +N%:` suggestion lines) as meaningful or
+  worth preserving — it's a stand-in.
 
 ## Persistence
 

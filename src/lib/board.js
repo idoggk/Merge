@@ -1,3 +1,5 @@
+import { DEFAULT_TARGET_EV } from './luckyDrop'
+
 export function emptyTiles(rows, cols) {
   return Array.from({ length: rows }, () => Array.from({ length: cols }, () => 'open'))
 }
@@ -24,6 +26,10 @@ export function createBoard(name, { rows = 5, cols = 8 } = {}) {
     blockedValue: 0,
     minRank: 1,
     maxRank: 12,
+    // Generator lucky-drop EV multiple - see luckyDrop.js. One shared value
+    // per board (still not per-tier), configurable in the "Lucky drops"
+    // editor card; only takes effect once the player holds a rank-7+ item.
+    targetEv: DEFAULT_TARGET_EV,
     // Generated item layout, persisted so it survives reload and so the
     // upcoming playthrough simulation has a fixed, reproducible board to run
     // against. semiPlacements are grid-fixed ({row, col, rank}); blockedQueue

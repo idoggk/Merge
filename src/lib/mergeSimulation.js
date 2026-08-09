@@ -369,7 +369,13 @@ export function advanceBoards(state, boards, nextBoardIndex, inventory, onPush) 
 // board state, each spend/merge/reveal/board-push, each first-time-reached
 // rank, and the final stop) — off by default so normal runs don't pay for it.
 export function simulatePlaythrough(boards, options = {}) {
-  const { startIndex = 0, drBudget = Infinity, targetEv = DEFAULT_TARGET_EV, maxSteps = 20000, trace = false } = options
+  const { startIndex = 0, drBudget = Infinity, maxSteps = 20000, trace = false } = options
+  // Defaults to the starting board's own configured EV (see board.js) so
+  // this automatically reflects whatever the economist sets in the "Lucky
+  // drops" editor card - options.targetEv still overrides it explicitly,
+  // for isolated/synthetic test boards (onboardingGoal.js, placement.js)
+  // that don't carry a real targetEv of their own.
+  const targetEv = options.targetEv ?? boards[startIndex]?.targetEv ?? DEFAULT_TARGET_EV
 
   const state = buildInitialState(boards[startIndex])
   const probs = computeProbs(targetEv)

@@ -66,3 +66,25 @@ body {
     opacity: 0;
   }
 }
+
+/* Lucky-drop celebration's "LUCKY +N!" badge (see LuckyDropCelebration.jsx)
+   - pops in bigger than its resting size, settles, then drifts up and fades
+   alongside the particle burst it's paired with. */
+@keyframes lucky-pop {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 1;
+  }
+  35% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -80%) scale(1);
+    opacity: 0;
+  }
+}
