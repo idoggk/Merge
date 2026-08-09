@@ -1,7 +1,7 @@
 import { Target, CheckCircle2, AlertTriangle } from 'lucide-react'
-import Card from './ui/Card'
 import NumberField from './ui/NumberField'
 import { MIN_RANK, MAX_RANK } from '../lib/ranks'
+import { invalidateLayout } from '../lib/board'
 
 const INFEASIBLE_MESSAGE = {
   'insufficient-subsidy': (status) =>
@@ -15,64 +15,62 @@ const INFEASIBLE_MESSAGE = {
     "This board's other semi tiles ended up with a bigger item than this goal's own reserve, which takes over as the board's one usable subsidy anchor and breaks the guarantee. Try regenerating, using fewer semi tiles, or lowering the target rank.",
 }
 
+// No <Card> wrapper - this is meant to be embedded inline (in BoardList's
+// board-1 bubble), not mounted as its own top-level panel. The caller
+// supplies whatever heading/spacing context it needs around it.
 export default function GoalSolver({ board, onChange }) {
   const status = board.onboardingStatus
   const goalSet = board.onboardingDrBudget != null && board.onboardingTargetRank != null
 
   function update(patch) {
-    onChange({ ...board, ...patch, semiPlacements: [], blockedQueue: [], onboardingStatus: null })
+    onChange(invalidateLayout(board, patch))
   }
 
   return (
-    <Card
-      title="Onboarding goal"
-      subtitle="Board 1 only — reserves the first part of this board's items so a player reaches a target rank within a DR grant"
-      icon={Target}
-      className="flex-1 min-w-64"
-    >
-      <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-4">
-          <NumberField
-            label="DR the player gets"
-            min={0}
-            value={board.onboardingDrBudget ?? ''}
-            onChange={(e) => update({ onboardingDrBudget: e.target.value === '' ? null : Number(e.target.value) })}
-          />
-          <NumberField
-            label="Target rank"
-            min={MIN_RANK}
-            max={MAX_RANK}
-            value={board.onboardingTargetRank ?? ''}
-            onChange={(e) => update({ onboardingTargetRank: e.target.value === '' ? null : Number(e.target.value) })}
-          />
-        </div>
-
-        {goalSet && !status && (
-          <p className="text-xs text-slate-400">Click "Generate items" to reserve items for this goal.</p>
-        )}
-
-        {status?.feasible && (
-          <div className="flex items-start gap-2.5 text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
-            <span className="mt-0.5 shrink-0 grid place-items-center w-5 h-5 rounded-full bg-emerald-500 text-white">
-              <CheckCircle2 size={13} strokeWidth={2.5} />
-            </span>
-            <span>
-              Reserved {status.reservedValue} DR up front (out of this board's total blocked value) — reaches rank{' '}
-              {board.onboardingTargetRank} using {status.drSpentToTarget} of the {board.onboardingDrBudget} DR grant.
-              The rest of the board's subsidy generates normally around it.
-            </span>
-          </div>
-        )}
-
-        {status && !status.feasible && (
-          <div className="flex items-start gap-2.5 text-sm text-red-800 bg-red-50 border border-red-200 rounded-xl p-3">
-            <span className="mt-0.5 shrink-0 grid place-items-center w-5 h-5 rounded-full bg-red-500 text-white">
-              <AlertTriangle size={13} strokeWidth={2.5} />
-            </span>
-            <span>{INFEASIBLE_MESSAGE[status.reason]?.(status) ?? 'This goal could not be satisfied.'}</span>
-          </div>
-        )}
+    <div className="flex flex-col gap-3">
+      <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        <Target size={12} strokeWidth={2.5} /> Onboarding goal
+      </span>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberField
+          label="DR the player gets"
+          min={0}
+          value={board.onboardingDrBudget ?? ''}
+          onChange={(e) => update({ onboardingDrBudget: e.target.value === '' ? null : Number(e.target.value) })}
+        />
+        <NumberField
+          label="Target rank"
+          min={MIN_RANK}
+          max={MAX_RANK}
+          value={board.onboardingTargetRank ?? ''}
+          onChange={(e) => update({ onboardingTargetRank: e.target.value === '' ? null : Number(e.target.value) })}
+        />
       </div>
-    </Card>
+
+      {goalSet && !status && (
+        <p className="text-xs text-slate-400">Click "Generate items" to reserve items for this goal.</p>
+      )}
+
+      {status?.feasible && (
+        <div className="flex items-start gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
+          <span className="mt-0.5 shrink-0 grid place-items-center w-4 h-4 rounded-full bg-emerald-500 text-white">
+            <CheckCircle2 size={10} strokeWidth={2.5} />
+          </span>
+          <span>
+            Reserved {status.reservedValue} DR up front — reaches rank {board.onboardingTargetRank} using{' '}
+            {status.drSpentToTarget} of the {board.onboardingDrBudget} DR grant.
+          </span>
+        </div>
+      )}
+
+      {status && !status.feasible && (
+        <div className="flex items-start gap-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded-xl p-2.5">
+          <span className="mt-0.5 shrink-0 grid place-items-center w-4 h-4 rounded-full bg-red-500 text-white">
+            <AlertTriangle size={10} strokeWidth={2.5} />
+          </span>
+          <span>{INFEASIBLE_MESSAGE[status.reason]?.(status) ?? 'This goal could not be satisfied.'}</span>
+        </div>
+      )}
+    </div>
   )
 }

@@ -147,6 +147,7 @@ function App() {
           onDuplicate={duplicateBoard}
           onRemove={removeBoard}
           onMove={moveBoard}
+          onUpdateBoard={updateBoard}
         />
         {activeBoard && mode === 'editor' && (
           <BoardEditor

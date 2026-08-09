@@ -61,6 +61,15 @@ export function gridWidthRem(cols) {
   return cols * 4.25 + Math.max(cols - 1, 0) * 0.5 + 2
 }
 
+// Plain edits (dimensions, tile paint, subsidy, rank window, onboarding
+// goal) invalidate any already-generated layout - it no longer matches the
+// new configuration. Shared so every editing surface (BoardEditor's own
+// fields, BoardList's inline board-bubble fields, GoalSolver) resets the
+// same way instead of three separate copies of this object spread.
+export function invalidateLayout(board, patch) {
+  return { ...board, ...patch, semiPlacements: [], blockedQueue: [], onboardingStatus: null }
+}
+
 export function cloneBoard(board, name) {
   return {
     ...board,

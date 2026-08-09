@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Grid2x2,
-  Coins,
   ListOrdered,
   Layers,
   Sparkles,
@@ -16,12 +15,11 @@ import {
 } from 'lucide-react'
 import BoardGrid from './BoardGrid'
 import SimulationReport from './SimulationReport'
-import GoalSolver from './GoalSolver'
 import Card from './ui/Card'
 import Button from './ui/Button'
 import NumberField from './ui/NumberField'
 import Slider from './ui/Slider'
-import { resizeTiles, gridWidthRem } from '../lib/board'
+import { resizeTiles, gridWidthRem, invalidateLayout } from '../lib/board'
 import { placeItems } from '../lib/placement'
 import { MIN_RANK, MAX_RANK, colorForRank, valueOf } from '../lib/ranks'
 import { applyPresetToBoard, createPreset } from '../lib/presets'
@@ -58,10 +56,8 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
     }
   }, [board.semiPlacements, board.blockedQueue, board.minRank, board.maxRank, isFirstBoard])
 
-  // Plain edits (dimensions, tile paint, subsidy, rank window) invalidate any
-  // already-generated layout — it no longer matches the new configuration.
   function updateBoard(patch) {
-    onChange({ ...board, ...patch, semiPlacements: [], blockedQueue: [], onboardingStatus: null })
+    onChange(invalidateLayout(board, patch))
   }
 
   function handleDimensionChange(rows, cols) {
@@ -248,41 +244,6 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
         )}
 
         <Card
-          title="Subsidy & rank window"
-          subtitle="Blocked-tile value and the allowed item rank range"
-          icon={Coins}
-          className="flex-1 min-w-64"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <NumberField
-              label="Blocked value (DR)"
-              className="col-span-2"
-              min={0}
-              max={valueOf(MAX_RANK)}
-              hint={`Can't exceed ${valueOf(MAX_RANK)} — the full chain's total value`}
-              value={board.blockedValue}
-              onChange={(e) =>
-                updateBoard({ blockedValue: Math.min(Number(e.target.value) || 0, valueOf(MAX_RANK)) })
-              }
-            />
-            <NumberField
-              label="Min rank"
-              min={MIN_RANK}
-              max={MAX_RANK}
-              value={board.minRank}
-              onChange={(e) => updateBoard({ minRank: Number(e.target.value) || MIN_RANK })}
-            />
-            <NumberField
-              label="Max rank"
-              min={MIN_RANK}
-              max={MAX_RANK}
-              value={board.maxRank}
-              onChange={(e) => updateBoard({ maxRank: Number(e.target.value) || MAX_RANK })}
-            />
-          </div>
-        </Card>
-
-        <Card
           title="Lucky drops"
           subtitle="Chance the generator drops a higher rank than normal"
           icon={Sparkles}
@@ -427,8 +388,6 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
             )}
           </div>
         </Card>
-
-        {isFirstBoard && <GoalSolver board={board} onChange={onChange} />}
 
         <SimulationReport board={board} boards={boards} boardIndex={boardIndex} />
 
