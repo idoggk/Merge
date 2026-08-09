@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { Save, Puzzle, LayoutGrid, Gamepad2, Boxes, FileCode2 } from 'lucide-react'
+import { Save, Puzzle, LayoutGrid, Gamepad2, Boxes, FileCode2, Share2, Check } from 'lucide-react'
 import BoardList from './components/BoardList'
 import BoardEditor from './components/BoardEditor'
 import PlayTester from './components/PlayTester'
 import CCManagement from './components/CCManagement'
 import SyntaxPage from './components/SyntaxPage'
+import PlayStage from './components/PlayStage'
 import Button from './components/ui/Button'
 import { createBoard, cloneBoard } from './lib/board'
 import { loadState, saveState } from './lib/persistence'
 import { DEFAULT_TARGET_EV } from './lib/luckyDrop'
+import { encodeStage, decodeStage } from './lib/stageShare'
+import { createDefaultStage } from './data/defaultStage'
 
 const MODES = [
   { id: 'editor', label: 'Editor', icon: LayoutGrid },
@@ -38,12 +41,34 @@ function initialState() {
   return { boards: [first], presets: [] }
 }
 
-function App() {
+// A shared stage link (?play, optionally &stage=<encoded boards> — see
+// stageShare.js) renders the stripped-down player view instead of the
+// economist app entirely, so a friend opening the link never sees the
+// editor/CC-management/syntax tooling. No stage param falls back to the
+// baked-in defaultStage.js demo, so a bare "?play" link is still meaningful.
+function PlayApp() {
+  const [boards] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return decodeStage(params.get('stage')) ?? createDefaultStage().boards
+  })
+
+  return (
+    <div className="min-h-screen">
+      <div className="app-backdrop" aria-hidden="true" />
+      <main className="max-w-[1760px] mx-auto px-3 py-4 sm:px-6 sm:py-10 play-compact-py">
+        <PlayStage boards={boards} />
+      </main>
+    </div>
+  )
+}
+
+function EditorApp() {
   const [state, setState] = useState(initialState)
   const { boards, presets } = state
   const [activeId, setActiveId] = useState(() => state.boards[0].id)
   const [savedAt, setSavedAt] = useState(null)
   const [mode, setMode] = useState('editor')
+  const [shareCopied, setShareCopied] = useState(false)
 
   const activeIndex = boards.findIndex((b) => b.id === activeId)
   const activeBoard = boards[activeIndex] ?? boards[0]
@@ -97,6 +122,17 @@ function App() {
     setSavedAt(new Date())
   }
 
+  // Encodes the current board list into the URL and copies a shareable
+  // player link - the recipient's browser never touches this app's
+  // localStorage, so the boards have to travel in the link itself.
+  async function handleShare() {
+    const url = new URL(window.location.href)
+    url.search = `?play&stage=${encodeStage(boards)}`
+    await navigator.clipboard.writeText(url.toString())
+    setShareCopied(true)
+    setTimeout(() => setShareCopied(false), 2000)
+  }
+
   return (
     <div className="min-h-screen">
       <div className="app-backdrop" aria-hidden="true" />
@@ -131,6 +167,9 @@ function App() {
               ))}
             </div>
             {savedAt && <span className="text-xs text-slate-400">Saved {savedAt.toLocaleTimeString()}</span>}
+            <Button variant="secondary" icon={shareCopied ? Check : Share2} onClick={handleShare}>
+              {shareCopied ? 'Link copied!' : 'Share stage'}
+            </Button>
             <Button variant="dark" icon={Save} onClick={handleSave}>
               Save
             </Button>
@@ -167,6 +206,11 @@ function App() {
       </main>
     </div>
   )
+}
+
+function App() {
+  const isPlayLink = new URLSearchParams(window.location.search).has('play')
+  return isPlayLink ? <PlayApp /> : <EditorApp />
 }
 
 export default App

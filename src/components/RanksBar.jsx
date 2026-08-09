@@ -57,7 +57,7 @@ export default function RanksBar({ maxRankReached, rewardRanks = [] }) {
           return (
             <div key={rank} className="relative flex flex-col items-center" style={{ width: `${100 / MAX_RANK}%` }}>
               <div
-                className={`relative w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] transition-transform duration-300 ${
+                className={`relative w-5 h-5 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[9px] sm:text-[11px] font-bold shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] transition-transform duration-300 ${
                   pop ? 'scale-[1.35]' : ''
                 }`}
                 style={{

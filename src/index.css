@@ -88,3 +88,23 @@ body {
     opacity: 0;
   }
 }
+
+/* PlayStage (src/components/PlayStage.jsx) is meant to be played on a phone
+   held sideways, where width is plentiful but height is the scarce
+   resource - unlike the rest of the app (a desktop design tool), it can't
+   just rely on width-keyed Tailwind breakpoints for that squeeze. These
+   hooks trim vertical chrome specifically when height is short AND the
+   device is in landscape, so a normal wide desktop window (also
+   "landscape", but never short on height) is untouched. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .play-compact-py {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .play-compact-gap {
+    gap: 0.5rem;
+  }
+  .play-hide-compact {
+    display: none;
+  }
+}

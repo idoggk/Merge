@@ -364,6 +364,95 @@ below. If the real spec turns out to need a different shape for
 suggestions vs. real config, that's an argument for keeping them as two
 separate functions in `boardSyntax.js` (already true), not for merging them.
 
+## Player mode (Play Stage) & hosting
+
+`src/components/PlayStage.jsx` is a second, player-facing consumer of the
+same session engine (`playSession.js`) the economist's Play Tester uses —
+same board-chaining/lucky-drop/tier mechanics, same tap-to-select-then-tap-
+target and native-drag interaction model, but with every economist-only tool
+stripped out (no compare-to-simulator, no raw event log) and a completion
+banner at `MAX_RANK`. It always starts at `boards[0]` — a "stage" is the
+whole board-chain sequence, not a single board a player picks.
+
+**Routing.** `App.jsx`'s top-level `App` checks
+`new URLSearchParams(window.location.search).has('play')` *before* deciding
+which of two otherwise-independent components to render: `PlayApp` (bare
+shell + `PlayStage`, no header/tabs/editor at all) or `EditorApp` (the
+existing economist tool, unchanged apart from a new "Share stage" button).
+This is a hard branch, not a mode toggle inside one component tree — a
+shared `?play` link must never expose the editor/CC-management/syntax
+tooling, even by a stray click.
+
+**Sharing a designed stage.** `src/lib/stageShare.js`'s `encodeStage`/
+`decodeStage` pack a board list into a URL-safe base64 JSON string carried
+in the `stage` query param — deliberately *not* `localStorage`, since
+that's per-browser and would never reach anyone else's device. The header's
+"Share stage" button (`EditorApp`'s `handleShare`) copies a full
+`?play&stage=...` link for the economist's *current* board list to the
+clipboard. `decodeStage` returns `null` on anything malformed rather than
+throwing; `PlayApp` treats `null` (missing or bad `stage` param) as "load
+`src/data/defaultStage.js`'s baked-in demo stage" — so a bare `?play` link
+is still meaningful, and a corrupted link degrades to the demo instead of a
+blank crash. This is plain base64, not compressed — fine for a stage that's
+a handful of boards, but if stages grow large enough to hit URL length
+limits, that's a reason to add real compression, not to shorten field names
+(same tradeoff noted in `stageShare.js` itself).
+
+**Default stage.** `src/data/defaultStage.js`'s `createDefaultStage()`
+returns a real, valid 2-board demo (generated once via the app's own
+`placeItems` pipeline, then frozen as data — exact-sum verified against
+each board's `blockedValue`) with fresh `crypto.randomUUID()`s minted per
+call. It exists purely so a fresh `?play` link (no `stage` param) shows
+something designed instead of an empty board — don't hand-edit its numbers
+without re-running them through `placeItems` first, for the same reason
+board data elsewhere in the app is never hand-fabricated.
+
+**Phone/landscape support.** `PlayStage` is meant to be played on a phone
+held sideways, where width is plentiful but height is the scarce resource —
+the rest of the app is a desktop design tool and doesn't have this problem.
+Two independent mechanisms, both intentional:
+- The board grid uses `minmax(0, 1fr)` columns (not a fixed rem size), and
+  the board/panel row uses Tailwind's `landscape:flex-row` *and*
+  `sm:flex-row` together (not chained) so side-by-side layout triggers on
+  either signal — landscape orientation regardless of width (covers narrow
+  phones like an iPhone SE at 568×320, which is landscape but under the
+  `sm` breakpoint), or plain desktop width regardless of orientation. Don't
+  collapse these back into a single `sm:` breakpoint — that regressed the
+  narrow-landscape case badly in testing (roughly 2x the vertical scroll
+  needed) before this fix.
+- `src/index.css`'s `.play-compact-py`/`.play-compact-gap`/
+  `.play-hide-compact` are scoped to
+  `@media (orientation: landscape) and (max-height: 500px)` specifically —
+  height-gated, not just orientation-gated, so a maximized desktop browser
+  window (also "landscape" but never short) doesn't get squeezed. Some
+  vertical scrolling on a short landscape phone is still expected and fine
+  (normal web page behavior); the goal of both mechanisms above is zero
+  *horizontal* overflow/scroll, which breaks touch panning, not zero
+  scrolling altogether.
+
+Native HTML5 drag-and-drop (`draggable`/`onDragStart`/etc., shared with
+Play Tester) doesn't fire on touch devices — this is a browser limitation,
+not a bug here. Play already works on touch regardless, because the tap-
+to-select-then-tap-target path (`handleCellClick`'s `selected` state) is
+wired unconditionally, independent of drag; PlayStage's own hint text says
+"drag, or tap" for exactly this reason. Don't try to add a touch-specific
+drag polyfill without confirming tap-based play actually has a real
+problem first.
+
+**Hosting.** The app is deployed to GitHub Pages from `idoggk/Merge`
+(confirmed public) at `https://idoggk.github.io/Merge/`, via the classic
+`gh-pages` npm package (`npm run deploy` = `vite build` + `gh-pages -d
+dist`) rather than the GitHub-Actions-based Pages flow — chosen specifically
+because this environment has no `gh` CLI/API access to toggle Pages
+settings or verify an Actions-based deploy, and the classic branch-push
+method auto-enables Pages on first push. It pushes only to a separate
+`gh-pages` branch and never touches `master`'s history — treat that branch
+as a build artifact, not something to hand-edit or merge from.
+`vite.config.js`'s `base: '/Merge/'` is load-bearing for this — it must
+match the repo name exactly, or every asset URL breaks under the Pages
+subpath. If the repo is ever renamed or the site moves to a custom domain,
+that `base` (and this note) needs to change together.
+
 ## Known open items / do not silently resolve these
 
 - **Tier re-lock is resolved as dynamic (non-ratchet).** If a player's only
@@ -406,7 +495,10 @@ aren't implemented (see "Implementation status" above); if a segments layer
 gets built later, this is the shape that'll need to grow to accommodate it.
 Save stays an explicit action (the header's Save button, `App.jsx`'s
 `handleSave`) rather than continuous autosave — preserve that if this grows
-a real backend.
+a real backend. This is the *economist's own* editing session only — it has
+nothing to do with sharing a stage with players, which travels entirely
+through the URL instead (see "Player mode (Play Stage) & hosting" below,
+`stageShare.js`); don't conflate the two or route one through the other.
 
 ## Style/stack notes
 
