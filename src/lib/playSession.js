@@ -197,22 +197,21 @@ export function mergeItems(session, from, to) {
 }
 
 export function canPlaceFromInventory(session, index) {
-  return index >= 0 && index < session.inventory.length
+  return index >= 0 && index < session.inventory.length && canSpendGenerator(session)
 }
 
-// Places inventory item `index` onto `to` if it's a free, unlocked, empty
-// cell - the player picks the target themselves, unlike the generator's
-// findSpawnCell heuristic. No-op (session unchanged) on an invalid target,
-// same convention as actionFor's other invalid-move cases.
-export function placeFromInventory(session, index, to) {
-  const { state } = session
+// Places inventory item `index` onto a free cell, picked the same way the
+// generator picks a spend's landing spot (findSpawnCell) - a click just
+// drops it, same one-step feel as everything else that puts an item on the
+// board. No-op (session unchanged) if the index is invalid or the board has
+// no free cell at all.
+export function placeFromInventory(session, index) {
   if (!canPlaceFromInventory(session, index)) return session
-  const [r, c] = to
-  if (!inBounds(state, r, c) || state.itemAt[r][c] != null || state.locked[r][c]) return session
-
+  const { state } = session
   const [rank] = session.inventory.splice(index, 1)
-  state.itemAt[r][c] = rank
-  logEvent(session, { type: 'inventory-place', cell: to, rank })
+  const cell = findSpawnCell(state, rank)
+  state.itemAt[cell[0]][cell[1]] = rank
+  logEvent(session, { type: 'inventory-place', cell, rank })
   makeRecordRank(session)(rank)
   return session
 }

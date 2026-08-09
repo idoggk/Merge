@@ -287,10 +287,12 @@ board in the list pushes in as a strip of its own rows from the top
 (`pushBoardIn`) — its own tile pattern, `semiPlacements`, and `blockedQueue`,
 top-left column-aligned — shifting everything else down. Items shifted past
 the bottom edge go into an inventory (a plain array of ranks) instead of
-being lost; the player clicks an inventory chip then a free cell to place it
-back (`placeFromInventory`), and the automatic simulator drains its own
-inventory automatically (right after merging, before spending new DR — both
-are free actions). This cascades through consecutive boards that clear
+being lost; the player clicks an inventory chip and it drops immediately
+onto a free cell (`placeFromInventory`, same `findSpawnCell` auto-placement
+heuristic the generator uses — one click, no select-then-target step, by
+explicit request), and the automatic simulator drains its own inventory
+automatically (right after merging, before spending new DR — both are free
+actions). This cascades through consecutive boards that clear
 instantly (e.g. an all-open one) rather than stalling on the first empty one,
 and simply stops firing once the list is exhausted — no error, no wraparound.
 

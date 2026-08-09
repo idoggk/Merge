@@ -35,7 +35,6 @@ export default function PlayTester({ boards, boardIndex }) {
   const board = boards[boardIndex]
   const [session, setSession] = useState(() => createPlaySession(boards, boardIndex))
   const [selected, setSelected] = useState(null)
-  const [selectedInventoryIndex, setSelectedInventoryIndex] = useState(null)
   const [compared, setCompared] = useState(null)
   const [celebration, setCelebration] = useState(null)
   const [luckyCelebration, setLuckyCelebration] = useState(null)
@@ -54,7 +53,6 @@ export default function PlayTester({ boards, boardIndex }) {
   function reset() {
     setSession(createPlaySession(boards, boardIndex))
     setSelected(null)
-    setSelectedInventoryIndex(null)
     setCompared(null)
     setChosenTierCost(1)
     clearTimeout(celebrationTimeout.current)
@@ -117,15 +115,6 @@ export default function PlayTester({ boards, boardIndex }) {
 
   function handleCellClick(r, c) {
     const { state } = session
-    if (selectedInventoryIndex != null) {
-      if (state.itemAt[r][c] == null && !state.locked[r][c]) {
-        placeFromInventory(session, selectedInventoryIndex, [r, c])
-        setSession({ ...session })
-      }
-      setSelectedInventoryIndex(null)
-      return
-    }
-
     if (selected) {
       const kind = actionFor(session, selected, [r, c])
       if (kind) {
@@ -143,12 +132,12 @@ export default function PlayTester({ boards, boardIndex }) {
     if (state.itemAt[r][c] != null && !state.stuck[r][c]) setSelected([r, c])
   }
 
-  // Selecting an inventory chip is mutually exclusive with selecting a board
-  // cell - clicking one clears the other, same as re-selecting a different
-  // board cell already clears the previous selection.
+  // One click drops it on a free cell (same auto-placement heuristic the
+  // generator uses) - no select-then-target step, matching how the
+  // generator itself already works.
   function handleInventoryClick(i) {
-    setSelected(null)
-    setSelectedInventoryIndex((current) => (current === i ? null : i))
+    placeFromInventory(session, i)
+    setSession({ ...session })
   }
 
   // Native HTML5 drag-and-drop for moving/merging - the drag source is
@@ -226,14 +215,7 @@ export default function PlayTester({ boards, boardIndex }) {
                       const stuck = state.stuck[r][c]
                       const movable = rank != null && !stuck
                       const isSelected = selected && selected[0] === r && selected[1] === c
-                      const targetKind =
-                        selectedInventoryIndex != null
-                          ? rank == null && !locked
-                            ? 'move'
-                            : null
-                          : selected
-                            ? actionFor(session, selected, [r, c])
-                            : null
+                      const targetKind = selected ? actionFor(session, selected, [r, c]) : null
 
                       // Free items (including a semi/blocked item that's
                       // already been cleared) get a clean, plain fill.
@@ -323,10 +305,8 @@ export default function PlayTester({ boards, boardIndex }) {
                         key={i}
                         type="button"
                         onClick={() => handleInventoryClick(i)}
-                        title={`rank ${rank} (${valueOf(rank)} DR) — click, then click a free cell to place it`}
-                        className={`w-9 h-9 rounded-lg flex flex-col items-center justify-center text-white text-xs font-bold leading-none shadow-[inset_0_2px_0_rgba(255,255,255,0.35)] transition-transform ${
-                          selectedInventoryIndex === i ? 'ring-4 ring-offset-2 ring-offset-white ring-purple-500' : 'hover:scale-105'
-                        }`}
+                        title={`rank ${rank} (${valueOf(rank)} DR) — click to drop it on a free cell`}
+                        className="w-9 h-9 rounded-lg flex flex-col items-center justify-center text-white text-xs font-bold leading-none shadow-[inset_0_2px_0_rgba(255,255,255,0.35)] transition-transform hover:scale-105"
                         style={{ backgroundColor: colorForRank(rank) }}
                       >
                         {rank}
