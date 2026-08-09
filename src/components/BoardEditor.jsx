@@ -11,6 +11,7 @@ import {
   ListOrdered,
   Layers,
   Sparkles,
+  Gift,
 } from 'lucide-react'
 import BoardGrid from './BoardGrid'
 import SimulationReport from './SimulationReport'
@@ -25,6 +26,8 @@ import { MIN_RANK, MAX_RANK, colorForRank, valueOf } from '../lib/ranks'
 import { applyPresetToBoard, createPreset } from '../lib/presets'
 import { DEFAULT_TARGET_EV, MIN_TARGET_EV, MAX_TARGET_EV, computeProbs } from '../lib/luckyDrop'
 import { TIER2_UNLOCK_RANK } from '../lib/generatorTier'
+
+const ALL_RANKS = Array.from({ length: MAX_RANK - MIN_RANK + 1 }, (_, i) => i + MIN_RANK)
 
 export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, presets, onChange, onSavePreset }) {
   const [noise, setNoise] = useState(0.15)
@@ -106,6 +109,15 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
   // layout the way dimension/tile/subsidy/rank-window edits do.
   function updateTargetEv(targetEv) {
     onChange({ ...board, targetEv })
+  }
+
+  // Also doesn't affect generation/placement - purely a marker the play
+  // tester's ranks bar reads to decide which checkpoints get a reward badge.
+  function toggleRewardRank(rank) {
+    const rewardRanks = board.rewardRanks.includes(rank)
+      ? board.rewardRanks.filter((r) => r !== rank)
+      : [...board.rewardRanks, rank].sort((a, b) => a - b)
+    onChange({ ...board, rewardRanks })
   }
 
   function handleApplyPreset(preset) {
@@ -283,6 +295,41 @@ export default function BoardEditor({ board, boards, boardIndex, isFirstBoard, p
               generator tier. Every tap before that is a guaranteed normal roll.
             </p>
           </div>
+        </Card>
+
+        <Card
+          title="Rank rewards"
+          subtitle="Optional — mark ranks that give the player a reward on first reaching them"
+          icon={Gift}
+          className="flex-1 min-w-64"
+        >
+          <div className="flex flex-wrap gap-2">
+            {ALL_RANKS.map((rank) => {
+              const active = board.rewardRanks.includes(rank)
+              return (
+                <button
+                  key={rank}
+                  type="button"
+                  onClick={() => toggleRewardRank(rank)}
+                  title={active ? `Rank ${rank} gives a reward — click to remove` : `Mark rank ${rank} as a reward rank`}
+                  className={`relative w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-[inset_0_2px_0_rgba(255,255,255,0.35)] transition-all ${
+                    active ? 'ring-2 ring-offset-2 ring-offset-white ring-amber-400' : 'opacity-40 hover:opacity-70'
+                  }`}
+                  style={{ backgroundColor: colorForRank(rank) }}
+                >
+                  {rank}
+                  {active && (
+                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-400 text-white flex items-center justify-center shadow">
+                      <Gift size={10} strokeWidth={3} />
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          {board.rewardRanks.length === 0 && (
+            <p className="text-xs text-slate-400 mt-3">No reward ranks set — entirely optional, doesn't affect generation.</p>
+          )}
         </Card>
 
         <Card

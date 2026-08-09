@@ -25,6 +25,7 @@ export function boardToSyntax(board, index) {
     'LAYOUT:',
     ...layoutLines(board.tiles),
     `CONFIG: blockedValue=${board.blockedValue} minRank=${board.minRank} maxRank=${board.maxRank} targetEv=${board.targetEv ?? DEFAULT_TARGET_EV}`,
+    `REWARDS: ${board.rewardRanks?.length ? board.rewardRanks.map((r) => `R${r}`).join(',') : '(none)'}`,
   ]
 
   if (board.semiPlacements.length === 0 && board.blockedQueue.length === 0) {

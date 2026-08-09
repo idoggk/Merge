@@ -29,6 +29,7 @@ function initialState() {
         onboardingTargetRank: null,
         onboardingStatus: null,
         targetEv: DEFAULT_TARGET_EV,
+        rewardRanks: [],
         ...b,
       })),
     }

@@ -265,6 +265,18 @@ simulator, so these rules apply to both:
   inside `onDragStart` before `setDragImage` runs, Chromium can intermittently
   show a corrupted/blank drag ghost. Keep the "grab the drag image first,
   defer the state update" ordering if you touch this handler.
+- **RanksBar** (rendered above the board) is a game-style event-track
+  showing progress toward rank `MAX_RANK`, one node per rank. It detects its
+  own "just reached a new rank" moment internally (comparing against the
+  previous render's `maxRankReached`), not something the caller signals —
+  keep it a drop-in display, don't push milestone-detection logic up into
+  PlayTester. `board.rewardRanks` (set in the editor's "Rank rewards" card,
+  entirely optional, empty by default) marks which ranks get a gift badge;
+  reaching a reward rank additionally fires a `MergeCelebration` burst
+  layered on top of the plain scale+glow every rank gets — a reward is
+  meant to read as a bigger deal than an ordinary tick. `rewardRanks` is
+  purely a display marker: it doesn't feed generation, placement, or
+  simulation at all, on purpose.
 
 ## Board chaining (waves + inventory)
 

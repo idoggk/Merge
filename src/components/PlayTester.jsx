@@ -4,6 +4,7 @@ import Card from './ui/Card'
 import Button from './ui/Button'
 import MergeCelebration from './MergeCelebration'
 import LuckyDropCelebration from './LuckyDropCelebration'
+import RanksBar from './RanksBar'
 import { colorForRank, valueOf, MAX_RANK } from '../lib/ranks'
 import { gridWidthRem } from '../lib/board'
 import { tierForRank, tierForBonus, celebrationDuration } from '../lib/mergeCelebration'
@@ -212,6 +213,8 @@ export default function PlayTester({ boards, boardIndex }) {
         </p>
       ) : (
         <div className="flex flex-col gap-5">
+          <RanksBar maxRankReached={maxRankReached} rewardRanks={board.rewardRanks} />
+
           <div className="flex flex-wrap items-start gap-6">
             <div className="flex flex-col gap-3" style={{ maxWidth: `${widthRem}rem` }}>
               <div className="inline-block bg-gradient-to-br from-indigo-50 via-violet-50 to-fuchsia-50 border border-violet-100 rounded-3xl p-4 shadow-inner select-none">

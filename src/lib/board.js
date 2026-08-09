@@ -43,6 +43,11 @@ export function createBoard(name, { rows = 5, cols = 8 } = {}) {
     onboardingDrBudget: null,
     onboardingTargetRank: null,
     onboardingStatus: null,
+    // Ranks (1-MAX_RANK) the economist has flagged as giving some reward on
+    // first reaching them - entirely optional, empty by default. Purely a
+    // marker for the play tester's ranks bar (RanksBar.jsx) to highlight;
+    // doesn't feed generation/placement or affect simulation at all.
+    rewardRanks: [],
   }
 }
 
@@ -64,6 +69,7 @@ export function cloneBoard(board, name) {
     tiles: board.tiles.map((row) => [...row]),
     semiPlacements: board.semiPlacements.map((p) => ({ ...p })),
     blockedQueue: [...board.blockedQueue],
+    rewardRanks: [...board.rewardRanks],
   }
 }
 
