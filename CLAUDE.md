@@ -447,6 +447,25 @@ original bug report was hard to act on — the recipient had no way to tell
 "working as intended, just not what was shared" from "something is
 actually broken."
 
+**"Share stage" always targets the real deployed site, never
+`window.location.href`.** `EditorApp`'s `handleShare` (`App.jsx`) builds its
+link against a hardcoded `PRODUCTION_ORIGIN` (`https://idoggk.github.io/Merge/`)
+regardless of what host the economist is actually viewing the app from —
+found live, from a second real bug report the same night this feature
+shipped: this app is naturally designed/tinkered with via `npm run dev`
+(`localhost:5173` or similar), and the *previous* version of `handleShare`
+built the link from `window.location.href`, so clicking "Share stage" while
+on localhost silently copied a `localhost:...` URL. That link looks
+completely ordinary to whoever copied it - it's still just a URL, it still
+copies fine - but "localhost" means "whichever machine opens this," not
+"the sender's machine," so it can never work for literally anyone else,
+on any network, with or without corporate firewalls involved. The stage
+payload is fully self-contained in the URL regardless of origin (see
+above), so hardcoding the production host to always be the sharing target
+costs nothing and closes off this entire class of "works for me, not for
+them" report for good. If the production URL ever changes (custom domain,
+repo rename - see "Hosting" below), this constant has to move with it.
+
 **Default stage.** `src/data/defaultStage.js`'s `createDefaultStage()`
 returns a real, valid 2-board demo (generated once via the app's own
 `placeItems` pipeline, then frozen as data — exact-sum verified against

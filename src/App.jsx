@@ -13,6 +13,10 @@ import { DEFAULT_TARGET_EV } from './lib/luckyDrop'
 import { encodeStage, decodeStage, MAX_SAFE_STAGE_CHARS } from './lib/stageShare'
 import { createDefaultStage } from './data/defaultStage'
 
+// "Share stage" always targets this, never window.location.href - see
+// handleShare's comment for why.
+const PRODUCTION_ORIGIN = 'https://idoggk.github.io/Merge/'
+
 const MODES = [
   { id: 'editor', label: 'Editor', icon: LayoutGrid },
   { id: 'play', label: 'Play tester', icon: Gamepad2 },
@@ -150,11 +154,20 @@ function EditorApp() {
   // send it anyway) - MAX_SAFE_STAGE_CHARS is a warning threshold, not a
   // hard block, since we can't know the recipient's actual network/client
   // ahead of time.
+  //
+  // Always targets PRODUCTION_ORIGIN, NEVER window.location.href - found
+  // live: this app is naturally designed/tinkered with via `npm run dev`
+  // (localhost), and a plain window.location.href-based link would silently
+  // copy a `localhost:5173/...` URL there - which looks completely normal
+  // to the person who copied it (it's still just a link) but can never work
+  // for literally anyone else, since "localhost" means "whichever machine
+  // opens this" on every computer, not "the sender's machine." The stage
+  // data itself is fully self-contained in the URL regardless of origin, so
+  // hardcoding the real deployed host costs nothing and removes an entire
+  // class of "it works for me but not for them" reports.
   async function handleShare() {
-    const url = new URL(window.location.href)
     const encoded = encodeStage(boards)
-    url.search = `?play&stage=${encoded}`
-    const fullUrl = url.toString()
+    const fullUrl = `${PRODUCTION_ORIGIN}?play&stage=${encoded}`
     await navigator.clipboard.writeText(fullUrl)
     setShareCopied(true)
     setTimeout(() => setShareCopied(false), 2000)
